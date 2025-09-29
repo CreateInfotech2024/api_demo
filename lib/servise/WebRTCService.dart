@@ -53,13 +53,21 @@ class WebRTCService {
   // Initialize local media (camera and microphone)
   Future<MediaStream?> initializeLocalMedia() async {
     try {
+      // Mobile-friendly media constraints
       final Map<String, dynamic> mediaConstraints = {
-        'audio': true,
+        'audio': {
+          'echoCancellation': true,
+          'noiseSuppression': true,
+          'autoGainControl': true,
+        },
         'video': {
           'mandatory': {
-            'minWidth': '640',
-            'minHeight': '480',
-            'minFrameRate': '30',
+            'minWidth': '320',
+            'minHeight': '240',
+            'maxWidth': '1280',
+            'maxHeight': '720',
+            'minFrameRate': '15',
+            'maxFrameRate': '30',
           },
           'facingMode': 'user',
           'optional': [],
@@ -67,11 +75,29 @@ class WebRTCService {
       };
 
       _localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
-      developer.log('✅ Local media initialized');
+      developer.log('✅ Local media initialized with mobile-friendly constraints');
       return _localStream;
     } catch (error) {
       developer.log('❌ Failed to initialize local media: $error');
-      rethrow;
+      
+      // Fallback with basic constraints for better mobile compatibility
+      try {
+        final Map<String, dynamic> fallbackConstraints = {
+          'audio': true,
+          'video': {
+            'facingMode': 'user',
+            'width': {'ideal': 640},
+            'height': {'ideal': 480},
+          }
+        };
+        
+        _localStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+        developer.log('✅ Local media initialized with fallback constraints');
+        return _localStream;
+      } catch (fallbackError) {
+        developer.log('❌ Fallback media initialization also failed: $fallbackError');
+        rethrow;
+      }
     }
   }
 
@@ -215,15 +241,28 @@ class WebRTCService {
   // Start screen sharing
   Future<MediaStream?> startScreenShare() async {
     try {
+      // Mobile-friendly screen sharing constraints
       final Map<String, dynamic> mediaConstraints = {
         'video': {
-          'deviceId': {'exact': 'screen'},
-          'mandatory': {},
+          'mediaSource': 'screen',
+          'width': {'max': 1920},
+          'height': {'max': 1080},
+          'frameRate': {'max': 15}, // Lower frame rate for better mobile performance
         },
-        'audio': true,
+        'audio': true, // Include system audio if supported
       };
 
-      _screenStream = await navigator.mediaDevices.getDisplayMedia(mediaConstraints);
+      try {
+        _screenStream = await navigator.mediaDevices.getDisplayMedia(mediaConstraints);
+      } catch (e) {
+        // Fallback for mobile devices that might not support all constraints
+        final fallbackConstraints = {
+          'video': true,
+          'audio': false, // Disable audio if causing issues on mobile
+        };
+        _screenStream = await navigator.mediaDevices.getDisplayMedia(fallbackConstraints);
+      }
+
       _isScreenSharing = true;
       SocketService().startScreenShare();
 
@@ -294,6 +333,21 @@ class WebRTCService {
   // Set callback for remote streams
   void onRemoteStream(Function(MediaStream) callback) {
     _mediaStreamCallbacks['remoteStream'] = callback;
+  }
+
+  // Create offer for a specific participant
+  Future<void> createOffer(String participantId) async {
+    try {
+      final RTCPeerConnection peerConnection = await _createPeerConnection(participantId);
+
+      final RTCSessionDescription offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+
+      SocketService().sendOffer(offer.toMap(), to: participantId);
+      developer.log('📤 Sent offer to $participantId');
+    } catch (error) {
+      developer.log('❌ Error creating offer for $participantId: $error');
+    }
   }
 
   // Clean up resources

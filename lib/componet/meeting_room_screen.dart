@@ -54,16 +54,26 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
       // Initialize WebRTC
       final webrtcService = context.read<WebRTCService>();
       
-      // Only initialize media for host or when specifically needed
+      // Initialize media for all participants (both host and non-host)
       MediaStream? stream;
       if (widget.currentParticipant.isHost!) {
+        // Host always initializes media
         stream = await webrtcService.initializeLocalMedia();
         if (stream != null) {
           await localRenderer.setSrcObject(stream);
         }
       } else {
-        // For non-host participants, only initialize if explicitly requested
-        print('Non-host participant - media initialization skipped initially');
+        // Non-host participants also initialize media to be visible and audible
+        try {
+          stream = await webrtcService.initializeLocalMedia();
+          if (stream != null) {
+            await localRenderer.setSrcObject(stream);
+            print('✅ Non-host participant media initialized successfully');
+          }
+        } catch (e) {
+          print('⚠️ Non-host participant media initialization failed: $e');
+          // Continue without local media - participant can still view others
+        }
       }
 
       // Setup WebRTC callbacks for remote streams
@@ -130,8 +140,11 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
 
       _addSystemMessage('${data.participantName} joined the meeting');
 
-      // Create WebRTC offer for the new participant
-      context.read<WebRTCService>().createOffer(data.participantId);
+      // Create WebRTC offer for the new participant if we have local media
+      final webrtcService = context.read<WebRTCService>();
+      if (webrtcService.getLocalStream() != null) {
+        webrtcService.createOffer(data.participantId);
+      }
     });
 
     socketService.onParticipantLeft((data) {
@@ -189,12 +202,13 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
 
   Future<void> _toggleAudio() async {
     // For non-host participants, initialize media if not already done
-    if (!widget.currentParticipant.isHost! && context.read<WebRTCService>().getLocalStream() == null) {
+    if (context.read<WebRTCService>().getLocalStream() == null) {
       try {
         final webrtcService = context.read<WebRTCService>();
         final stream = await webrtcService.initializeLocalMedia();
         if (stream != null) {
           await localRenderer.setSrcObject(stream);
+          print('✅ Media initialized for audio toggle');
         }
       } catch (e) {
         _showError('Failed to access microphone: ${e.toString()}');
@@ -211,12 +225,13 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
 
   Future<void> _toggleVideo() async {
     // For non-host participants, initialize media if not already done
-    if (!widget.currentParticipant.isHost! && context.read<WebRTCService>().getLocalStream() == null) {
+    if (context.read<WebRTCService>().getLocalStream() == null) {
       try {
         final webrtcService = context.read<WebRTCService>();
         final stream = await webrtcService.initializeLocalMedia();
         if (stream != null) {
           await localRenderer.setSrcObject(stream);
+          print('✅ Media initialized for video toggle');
         }
       } catch (e) {
         _showError('Failed to access camera: ${e.toString()}');
@@ -305,11 +320,21 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
       final webrtcService = context.read<WebRTCService>();
       final remoteStreams = webrtcService.remoteStreams;
       
+      print('🔄 Updating remote stream renderer for ${remoteStreams.length} remote streams');
+      
       for (var entry in remoteStreams.entries) {
-        if (entry.value == stream && remoteRenderers.containsKey(entry.key)) {
+        if (entry.value == stream) {
+          print('📺 Found matching stream for participant: ${entry.key}');
+          
+          // Initialize renderer if it doesn't exist
+          if (!remoteRenderers.containsKey(entry.key)) {
+            await _initializeRemoteRenderer(entry.key);
+          }
+          
           final renderer = remoteRenderers[entry.key];
           if (renderer != null) {
             await renderer.setSrcObject(stream);
+            print('✅ Successfully set remote stream for ${entry.key}');
             setState(() {
               // Force rebuild to show new remote streams
             });
@@ -318,7 +343,7 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
         }
       }
     } catch (e) {
-      print('Error updating remote stream renderer: $e');
+      print('❌ Error updating remote stream renderer: $e');
     }
   }
 
@@ -523,22 +548,49 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
                     )
                         : Stack(
                       children: [
-                        // Main video area - show local video for host or remote videos
-                        if (widget.currentParticipant.isHost! || localRenderer.srcObject != null)
+                        // Main video area - show host video to all participants, or local video if user is host
+                        if (widget.currentParticipant.isHost! && localRenderer.srcObject != null)
+                          // Host shows their own video in main area
                           RTCVideoView(
                             localRenderer,
                             objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                           )
                         else if (remoteRenderers.isNotEmpty)
-                          // Show remote participant video if available
+                          // Participants see host or other participants' video in main area
                           Builder(
                             builder: (context) {
-                              final firstRemoteRenderer = remoteRenderers.values.first;
+                              // Prioritize showing host video if available, otherwise show any remote video
+                              final hostParticipant = participants.firstWhere(
+                                (p) => p.isHost == true && p.id != widget.currentParticipant.id,
+                                orElse: () => participants.firstWhere(
+                                  (p) => p.id != widget.currentParticipant.id,
+                                  orElse: () => participants.first,
+                                ),
+                              );
+                              
+                              final hostRenderer = remoteRenderers[hostParticipant.id];
+                              if (hostRenderer != null && hostRenderer.srcObject != null) {
+                                return RTCVideoView(
+                                  hostRenderer,
+                                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                );
+                              }
+                              
+                              // Fallback to any available remote stream
+                              final firstAvailableRenderer = remoteRenderers.values
+                                  .firstWhere((renderer) => renderer.srcObject != null,
+                                  orElse: () => remoteRenderers.values.first);
                               return RTCVideoView(
-                                firstRemoteRenderer,
+                                firstAvailableRenderer,
                                 objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                               );
                             },
+                          )
+                        else if (!widget.currentParticipant.isHost! && localRenderer.srcObject != null)
+                          // Non-host participants can see their own video if no remote streams
+                          RTCVideoView(
+                            localRenderer,
+                            objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                           )
                         else
                           // Waiting for participants
@@ -572,8 +624,8 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
                             ),
                           ),
                         
-                        // Local video thumbnail (bottom left)
-                        if (widget.currentParticipant.isHost! && localRenderer.srcObject != null)
+                        // Local video thumbnail (bottom left) - show for all participants when they have local stream
+                        if (localRenderer.srcObject != null)
                           Positioned(
                             bottom: 8,
                             left: 8,
