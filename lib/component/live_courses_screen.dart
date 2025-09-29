@@ -1,7 +1,6 @@
-import 'package:api_demo/componet/meeting_room_screen.dart';
-import 'package:api_demo/servise/api_service.dart';
+import 'package:api_demo/component/meeting_room_screen.dart';
+import 'package:api_demo/service/api_service.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 
 class LiveCoursesScreen extends StatefulWidget {
@@ -33,7 +32,6 @@ class _LiveCoursesScreenState extends State<LiveCoursesScreen> {
     });
 
     try {
-      final apiService = context.read<LiveCourseAPI>();
       final response = await LiveCourseAPI.getAllCourses();
 
       if (response.success && response.data != null) {
@@ -59,7 +57,6 @@ class _LiveCoursesScreenState extends State<LiveCoursesScreen> {
     });
 
     try {
-      final apiService = context.read<LiveCourseAPI>();
 
       // If course is already active and has meeting code, directly join as host
       if (course.status == 'active' && course.meetingCode != null) {
@@ -100,7 +97,6 @@ class _LiveCoursesScreenState extends State<LiveCoursesScreen> {
     });
 
     try {
-      final apiService = context.read<LiveCourseAPI>();
       final joinResponse = await LiveCourseAPI.joinCourse(course.id,userId: 'participant_${DateTime.now().millisecondsSinceEpoch}', userName: 'Test Participant');
 
       if (joinResponse.success) {

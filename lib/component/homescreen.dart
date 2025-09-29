@@ -1,7 +1,7 @@
-import 'package:api_demo/componet/course_creator_screen.dart';
-import 'package:api_demo/componet/live_courses_screen.dart';
-import 'package:api_demo/servise/WebRTCService.dart';
-import 'package:api_demo/servise/socketService.dart';
+import 'package:api_demo/component/course_creator_screen.dart';
+import 'package:api_demo/component/live_courses_screen.dart';
+import 'package:api_demo/service/WebRTCService.dart';
+import 'package:api_demo/service/socketService.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 

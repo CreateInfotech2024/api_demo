@@ -1,9 +1,8 @@
-import 'package:api_demo/componet/ParticipantsList.dart';
-import 'package:api_demo/componet/chat_panel.dart';
-import 'package:api_demo/model/chat_message.dart';
-import 'package:api_demo/servise/api_service.dart'hide LiveCourse;
+import 'package:api_demo/component/ParticipantsList.dart';
+import 'package:api_demo/component/chat_panel.dart';
+import 'package:api_demo/service/socketService.dart';
+import 'package:api_demo/service/api_service.dart';
 import 'package:flutter/material.dart';
-import 'package:api_demo/model/live_course.dart' ;
 
 class MeetingRoom extends StatefulWidget {
   final LiveCourse meeting;
@@ -29,7 +28,20 @@ class _MeetingRoomState extends State<MeetingRoom> {
   List<Participant> participants = [];
   List<ChatMessage> chatMessages = [];
   bool isChatVisible = true;
-  LiveCourse meetingInfo = LiveCourse.empty();
+  LiveCourse meetingInfo = LiveCourse(
+    id: '',
+    name: '',
+    instructorId: '',
+    instructorName: '',
+    category: '',
+    status: 'scheduled',
+    scheduledDateTime: '',
+    duration: 0,
+    enrolledUsers: [],
+    recordingEnabled: false,
+    createdAt: '',
+    updatedAt: '',
+  );
   bool isAudioEnabled = true;
   bool isVideoEnabled = true;
   bool isScreenSharing = false;

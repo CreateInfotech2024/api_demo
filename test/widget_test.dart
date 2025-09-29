@@ -8,9 +8,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import 'package:api_demo/main.dart';
-import 'package:api_demo/servise/WebRTCService.dart';
-import 'package:api_demo/servise/socketService.dart';
-import 'package:api_demo/servise/api_service.dart';
+import 'package:api_demo/service/WebRTCService.dart';
+import 'package:api_demo/service/socketService.dart';
+import 'package:api_demo/service/api_service.dart';
 
 void main() {
   group('Video Calling App Integration Tests', () {

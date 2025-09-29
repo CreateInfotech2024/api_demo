@@ -1,6 +1,5 @@
-import 'package:api_demo/servise/api_service.dart';
+import 'package:api_demo/service/api_service.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 class CourseCreatorScreen extends StatefulWidget {
   const CourseCreatorScreen({super.key});
@@ -45,7 +44,6 @@ class _CourseCreatorScreenState extends State<CourseCreatorScreen> {
     });
 
     try {
-      final apiService = context.read<LiveCourseAPI>();
       final scheduledDateTime = DateTime.now().add(Duration(minutes: 1)).toIso8601String();
 
       final courseData = {

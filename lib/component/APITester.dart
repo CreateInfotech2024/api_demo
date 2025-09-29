@@ -1,5 +1,5 @@
-import 'package:api_demo/servise/api_service.dart';
-import 'package:api_demo/servise/socketService.dart';
+import 'package:api_demo/service/api_service.dart';
+import 'package:api_demo/service/socketService.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 

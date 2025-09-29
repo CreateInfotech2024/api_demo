@@ -1,5 +1,4 @@
-// import 'package:api_demo/servise/api_service.dart';
-import 'package:api_demo/servise/api_service.dart';
+import 'package:api_demo/service/api_service.dart';
 import 'package:flutter/material.dart';
 
 class LiveCoursesList extends StatefulWidget {

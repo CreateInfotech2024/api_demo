@@ -1,8 +1,8 @@
-import 'package:api_demo/componet/ParticipantsList.dart';
-import 'package:api_demo/componet/chat_panel.dart';
-import 'package:api_demo/servise/WebRTCService.dart';
-import 'package:api_demo/servise/api_service.dart';
-import 'package:api_demo/servise/socketService.dart';
+import 'package:api_demo/component/ParticipantsList.dart';
+import 'package:api_demo/component/chat_panel.dart';
+import 'package:api_demo/service/WebRTCService.dart';
+import 'package:api_demo/service/api_service.dart';
+import 'package:api_demo/service/socketService.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -370,7 +370,6 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
     }
 
     try {
-      final apiService = context.read<LiveCourseAPI>();
       final response = await LiveCourseAPI.completeCourse(widget.course.id);
 
       if (response.success) {

@@ -1,4 +1,4 @@
-import 'package:api_demo/model/chat_message.dart';
+import 'package:api_demo/service/socketService.dart';
 import 'package:flutter/material.dart';
 
 class ChatPanel extends StatefulWidget {
