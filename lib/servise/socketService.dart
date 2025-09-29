@@ -1,5 +1,7 @@
 import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:api_demo/config/mobile_optimizations.dart';
 import 'dart:async';
+import 'dart:developer' as developer;
 
 class ChatMessage {
   final String id;
@@ -87,6 +89,7 @@ class SocketService {
 
   Future<void> connect() async {
     if (_socket?.connected == true) {
+      developer.log('✅ Socket already connected');
       return;
     }
 
@@ -96,17 +99,19 @@ class SocketService {
       defaultValue: 'https://krishnabarasiya.space',
     );
 
-    _socket = IO.io(backendUrl, <String, dynamic>{
-      'transports': ['websocket', 'polling'],
-      'timeout': 10000,
-    });
+    developer.log('🔄 Attempting to connect to: $backendUrl');
+
+    // Use mobile-optimized socket configuration
+    final socketConfig = MobileOptimizations.getSocketConfiguration();
+    
+    _socket = IO.io(backendUrl, socketConfig);
 
     // Use a Completer to wait for connection
     final completer = Completer<void>();
     bool hasCompleted = false;
 
     _socket?.on('connect', (_) {
-      print('✅ Connected to Socket.IO server');
+      developer.log('✅ Connected to Socket.IO server at $backendUrl');
       _isConnected = true;
       if (!hasCompleted) {
         hasCompleted = true;
@@ -114,10 +119,50 @@ class SocketService {
       }
     });
 
-    _socket?.on('disconnect', (_) {
-      print('❌ Disconnected from Socket.IO server');
+    _socket?.on('disconnect', (reason) {
+      developer.log('❌ Disconnected from Socket.IO server. Reason: $reason');
       _isConnected = false;
     });
+
+    _socket?.on('connect_error', (error) {
+      developer.log('❌ Socket connection error: $error');
+      _isConnected = false;
+      if (!hasCompleted) {
+        hasCompleted = true;
+        completer.completeError('Connection failed: $error');
+      }
+    });
+
+    _socket?.on('reconnect', (attemptNumber) {
+      developer.log('✅ Socket reconnected after $attemptNumber attempts');
+      _isConnected = true;
+    });
+
+    _socket?.on('reconnect_attempt', (attemptNumber) {
+      developer.log('🔄 Socket reconnection attempt #$attemptNumber');
+    });
+
+    _socket?.on('reconnect_failed', (_) {
+      developer.log('❌ Socket failed to reconnect after all attempts');
+      _isConnected = false;
+    });
+
+    try {
+      // Wait for connection or timeout
+      await completer.future.timeout(
+        Duration(seconds: 20),
+        onTimeout: () => throw TimeoutException('Socket connection timeout'),
+      );
+      developer.log('✅ Socket connection established successfully');
+    } catch (e) {
+      developer.log('❌ Failed to establish socket connection: $e');
+      
+      // For offline scenarios, we'll continue without socket connection
+      // The app should still work for local peer-to-peer connections
+      developer.log('⚠️ Continuing in offline mode - some features may be limited');
+      rethrow;
+    }
+  }
 
     _socket?.on('connect_error', (error) {
       print('❌ Socket.IO connection error: $error');
