@@ -41,12 +41,13 @@ class WebRTCService {
   MediaStream? getLocalStream() => _localStream;
 
   void _setupSocketListeners() {
-    socketService.onOffer(_handleOffer);
-    socketService.onAnswer(_handleAnswer);
-    socketService.onIceCandidate(_handleIceCandidate);
-    socketService.onScreenShareOffer(_handleScreenShareOffer);
-    socketService.onScreenShareAnswer(_handleScreenShareAnswer);
-    socketService.onScreenShareIceCandidate(_handleScreenShareIceCandidate);
+    final socket = SocketService();
+    socket.onOffer(_handleOffer);
+    socket.onAnswer(_handleAnswer);
+    socket.onIceCandidate(_handleIceCandidate);
+    socket.onScreenShareOffer(_handleScreenShareOffer);
+    socket.onScreenShareAnswer(_handleScreenShareAnswer);
+    socket.onScreenShareIceCandidate(_handleScreenShareIceCandidate);
   }
 
   // Initialize local media (camera and microphone)
@@ -99,7 +100,7 @@ class WebRTCService {
 
     // Handle ICE candidates
     peerConnection.onIceCandidate = (RTCIceCandidate candidate) {
-      socketService.sendIceCandidate(candidate.toMap(), to: participantId);
+      SocketService().sendIceCandidate(candidate.toMap(), to: participantId);
     };
 
     // Add local stream to peer connection
@@ -128,7 +129,7 @@ class WebRTCService {
       final RTCSessionDescription answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
 
-      socketService.sendAnswer(answer.toMap(), to: from);
+      SocketService().sendAnswer(answer.toMap(), to: from);
     } catch (error) {
       developer.log('❌ Error handling offer: $error');
     }
@@ -177,7 +178,7 @@ class WebRTCService {
       final RTCSessionDescription offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
 
-      socketService.sendOffer(offer.toMap(), to: participantId);
+      SocketService().sendOffer(offer.toMap(), to: participantId);
     } catch (error) {
       developer.log('❌ Error creating offer: $error');
     }
@@ -191,7 +192,7 @@ class WebRTCService {
         track.enabled = !track.enabled;
       }
       _isAudioEnabled = !_isAudioEnabled;
-      socketService.toggleAudio(_isAudioEnabled);
+      SocketService().toggleAudio(_isAudioEnabled);
       return _isAudioEnabled;
     }
     return false;
@@ -205,7 +206,7 @@ class WebRTCService {
         track.enabled = !track.enabled;
       }
       _isVideoEnabled = !_isVideoEnabled;
-      socketService.toggleVideo(_isVideoEnabled);
+      SocketService().toggleVideo(_isVideoEnabled);
       return _isVideoEnabled;
     }
     return false;
@@ -224,7 +225,7 @@ class WebRTCService {
 
       _screenStream = await navigator.mediaDevices.getDisplayMedia(mediaConstraints);
       _isScreenSharing = true;
-      socketService.startScreenShare();
+      SocketService().startScreenShare();
 
       // Replace video track in all peer connections
       final videoTrack = _screenStream!.getVideoTracks().first;
@@ -256,7 +257,7 @@ class WebRTCService {
       _screenStream!.getTracks().forEach((track) => track.stop());
       _screenStream = null;
       _isScreenSharing = false;
-      socketService.stopScreenShare();
+      SocketService().stopScreenShare();
 
       // Replace back to camera
       if (_localStream != null) {
