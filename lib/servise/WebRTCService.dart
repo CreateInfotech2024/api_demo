@@ -117,10 +117,23 @@ class WebRTCService {
       developer.log('📺 Received remote stream from $participantId');
       if (event.streams.isNotEmpty) {
         _remoteStreams[participantId] = event.streams[0];
+        developer.log('✅ Added remote stream for $participantId');
+        
+        // Notify all callbacks about the new remote stream
         final callback = _mediaStreamCallbacks['remoteStream'];
         if (callback != null) {
           callback(event.streams[0]);
         }
+      }
+    };
+
+    // Handle connection state changes for debugging
+    peerConnection.onConnectionState = (RTCPeerConnectionState state) {
+      developer.log('🔗 Connection state for $participantId: $state');
+      if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+        developer.log('✅ Successfully connected to $participantId');
+      } else if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
+        developer.log('❌ Connection failed to $participantId');
       }
     };
 
@@ -347,6 +360,24 @@ class WebRTCService {
       developer.log('📤 Sent offer to $participantId');
     } catch (error) {
       developer.log('❌ Error creating offer for $participantId: $error');
+    }
+  }
+
+  // Get remote stream for a specific participant
+  MediaStream? getRemoteStream(String participantId) {
+    return _remoteStreams[participantId];
+  }
+
+  // Debug method to check connection status
+  void logConnectionStatus() {
+    developer.log('📊 WebRTC Connection Status:');
+    developer.log('  Local stream: ${_localStream != null ? "Active" : "None"}');
+    developer.log('  Screen stream: ${_screenStream != null ? "Active" : "None"}');
+    developer.log('  Peer connections: ${_peerConnections.length}');
+    developer.log('  Remote streams: ${_remoteStreams.length}');
+    
+    for (var entry in _peerConnections.entries) {
+      developer.log('  - ${entry.key}: ${entry.value.connectionState}');
     }
   }
 

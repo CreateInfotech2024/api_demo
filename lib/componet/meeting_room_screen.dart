@@ -101,6 +101,23 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
       // Setup socket listeners
       _setupSocketListeners(socketService);
 
+      // After joining, create offers for any existing participants if we have media
+      // This ensures late joiners can see existing participants' streams
+      Future.delayed(Duration(seconds: 2), () {
+        final webrtcService = context.read<WebRTCService>();
+        if (webrtcService.getLocalStream() != null) {
+          for (final participant in participants) {
+            if (participant.id != widget.currentParticipant.id) {
+              print('🔄 Creating offer for existing participant: ${participant.name}');
+              webrtcService.createOffer(participant.id);
+            }
+          }
+        }
+        
+        // Log connection status for debugging
+        webrtcService.logConnectionStatus();
+      });
+
     } catch (e) {
       print('Initialization error: $e');
       _showError('Failed to initialize meeting room: ${e.toString()}');
@@ -696,9 +713,7 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
                         ),
                       ),
                       ElevatedButton.icon(
-                        onPressed: (isInitializingMedia || !widget.currentParticipant.isHost!)
-                            ? null
-                            : _toggleScreenShare,
+                        onPressed: isInitializingMedia ? null : _toggleScreenShare,
                         icon: Icon(isScreenSharing ? Icons.stop_screen_share : Icons.screen_share),
                         label: Text(isScreenSharing ? 'Stop Sharing' : 'Share Screen'),
                         style: ElevatedButton.styleFrom(
