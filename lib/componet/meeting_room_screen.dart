@@ -32,6 +32,7 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
   bool isScreenSharing = false;
   bool isInitializingMedia = false;
   bool isGridViewEnabled = false; // Toggle between grid and speaker view
+  String networkQuality = 'good'; // good, fair, poor
 
   RTCVideoRenderer localRenderer = RTCVideoRenderer();
   Map<String, RTCVideoRenderer> remoteRenderers = {};
@@ -1191,10 +1192,41 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
                               ),
                             ),
                           ),
-                      ],
-                    ),
-                  ),
-                ),
+                        // Network quality indicator
+                        Positioned(
+                          top: 16,
+                          right: 16,
+                          child: Container(
+                            padding: EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.black54,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  networkQuality == 'good' ? Icons.wifi :
+                                  networkQuality == 'fair' ? Icons.wifi_2_bar :
+                                  Icons.wifi_off,
+                                  color: networkQuality == 'good' ? Colors.green :
+                                         networkQuality == 'fair' ? Colors.orange :
+                                         Colors.red,
+                                  size: 16,
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  networkQuality.toUpperCase(),
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                 Container(
                   padding: EdgeInsets.all(16),
                   decoration: BoxDecoration(
