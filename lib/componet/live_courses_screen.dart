@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 
 
 class LiveCoursesScreen extends StatefulWidget {
+  const LiveCoursesScreen({super.key});
+
   @override
   _LiveCoursesScreenState createState() => _LiveCoursesScreenState();
 }
@@ -280,12 +282,11 @@ class _LiveCoursesScreenState extends State<LiveCoursesScreen> {
                             _buildDetailChip('👨‍🏫 ${course.instructorName}'),
                             _buildDetailChip('📂 ${course.category}'),
                             _buildDetailChip('⏱️ ${course.duration} min'),
-                            _buildDetailChip('👥 ${course.enrolledUsers?.length ?? 0} users'),
+                            _buildDetailChip('👥 ${course.enrolledUsers.length ?? 0} users'),
                             _buildDetailChip('📹 ${course.recordingEnabled ? '✅ Enabled' : '❌ Disabled'}'),
                             if (course.meetingCode != null)
                               _buildDetailChip('🔑 ${course.meetingCode}', isHighlight: true),
-                            if (course.scheduledDateTime != null)
-                              _buildDetailChip('📅 ${DateTime.parse(course.scheduledDateTime!).toLocal().toString().substring(0, 16)}'),
+                            _buildDetailChip('📅 ${DateTime.parse(course.scheduledDateTime!).toLocal().toString().substring(0, 16)}'),
                           ],
                         ),
                         SizedBox(height: 16),

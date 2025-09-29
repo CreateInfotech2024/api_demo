@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 class CourseCreatorScreen extends StatefulWidget {
+  const CourseCreatorScreen({super.key});
+
   @override
   _CourseCreatorScreenState createState() => _CourseCreatorScreenState();
 }

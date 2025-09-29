@@ -20,14 +20,14 @@ class TestResult {
 }
 
 class APITester extends StatefulWidget {
-  const APITester({Key? key}) : super(key: key);
+  const APITester({super.key});
 
   @override
   _APITesterState createState() => _APITesterState();
 }
 
 class _APITesterState extends State<APITester> {
-  List<TestResult> _testResults = [];
+  final List<TestResult> _testResults = [];
   bool _testing = false;
   late SocketService _socketService;
 

@@ -8,11 +8,11 @@ class ParticipantsList extends StatelessWidget {
   final VoidCallback onRefresh;
 
   const ParticipantsList({
-    Key? key,
+    super.key,
     required this.participants,
     required this.currentParticipant,
     required this.onRefresh,
-  }) : super(key: key);
+  });
 
   String _formatJoinTime(String timestamp) {
     final dateTime = DateTime.parse(timestamp);

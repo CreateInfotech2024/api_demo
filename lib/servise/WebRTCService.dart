@@ -70,7 +70,7 @@ class WebRTCService {
       return _localStream;
     } catch (error) {
       developer.log('❌ Failed to initialize local media: $error');
-      throw error;
+      rethrow;
     }
   }
 
@@ -246,7 +246,7 @@ class WebRTCService {
       return _screenStream;
     } catch (error) {
       developer.log('❌ Failed to start screen sharing: $error');
-      throw error;
+      rethrow;
     }
   }
 

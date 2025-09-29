@@ -7,10 +7,10 @@ class LiveCoursesList extends StatefulWidget {
   final Function(String error) onError;
 
   const LiveCoursesList({
-    Key? key,
+    super.key,
     required this.onHostConnect,
     required this.onError,
-  }) : super(key: key);
+  });
 
   @override
   State<LiveCoursesList> createState() => _LiveCoursesListState();
@@ -240,14 +240,14 @@ class CourseCard extends StatelessWidget {
   final String statusIcon;
 
   const CourseCard({
-    Key? key,
+    super.key,
     required this.course,
     this.connectingCourseId,
     required this.onHostConnect,
     required this.onParticipantConnect,
     required this.statusColor,
     required this.statusIcon,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -309,16 +309,15 @@ class CourseCard extends StatelessWidget {
                   DetailItem(label: '👨‍🏫 Instructor:', value: course.instructorName),
                   DetailItem(label: '📂 Category:', value: course.category),
                   DetailItem(label: '⏱️ Duration:', value: '${course.duration} min'),
-                  DetailItem(label: '👥 Enrolled:', value: '${course.enrolledUsers?.length ?? 0} users'),
+                  DetailItem(label: '👥 Enrolled:', value: '${course.enrolledUsers.length ?? 0} users'),
                   DetailItem(
                     label: '🎹 Recording:',
                     value: course.recordingEnabled ? '✅ Enabled' : '❌ Disabled',
                   ),
-                  if (course.scheduledDateTime != null)
-                    DetailItem(
-                      label: '📅 Scheduled:',
-                      value: DateTime.parse(course.scheduledDateTime!).toLocal().toString().substring(0, 16),
-                    ),
+                  DetailItem(
+                    label: '📅 Scheduled:',
+                    value: DateTime.parse(course.scheduledDateTime!).toLocal().toString().substring(0, 16),
+                  ),
                   if (course.meetingCode != null)
                     DetailItem(label: '🔑 Meeting Code:', value: course.meetingCode!),
                 ],
@@ -365,10 +364,10 @@ class DetailItem extends StatelessWidget {
   final String value;
 
   const DetailItem({
-    Key? key,
+    super.key,
     required this.label,
     required this.value,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

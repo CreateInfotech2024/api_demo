@@ -7,10 +7,10 @@ class CourseCreator extends StatefulWidget {
   final Function(String error) onError;
 
   const CourseCreator({
-    Key? key,
+    super.key,
     required this.onCourseCreated,
     required this.onError,
-  }) : super(key: key);
+  });
 
   @override
   State<CourseCreator> createState() => _CourseCreatorState();

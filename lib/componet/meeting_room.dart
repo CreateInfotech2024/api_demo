@@ -13,13 +13,13 @@ class MeetingRoom extends StatefulWidget {
   final Function(LiveCourse course)? onCourseCompleted;
 
   const MeetingRoom({
-    Key? key,
+    super.key,
     required this.meeting,
     required this.currentParticipant,
     required this.onLeaveMeeting,
     required this.onError,
     this.onCourseCompleted,
-  }) : super(key: key);
+  });
 
   @override
   State<MeetingRoom> createState() => _MeetingRoomState();
@@ -413,9 +413,9 @@ class RemoteVideoWidget extends StatelessWidget {
   final Participant participant;
 
   const RemoteVideoWidget({
-    Key? key,
+    super.key,
     required this.participant,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -461,13 +461,13 @@ class VideoControlButton extends StatelessWidget {
   final Color color;
 
   const VideoControlButton({
-    Key? key,
+    super.key,
     required this.icon,
     required this.label,
     required this.isEnabled,
     this.onPressed,
     required this.color,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

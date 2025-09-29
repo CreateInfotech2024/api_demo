@@ -7,11 +7,11 @@ class ChatPanel extends StatefulWidget {
   final String currentUser;
 
   const ChatPanel({
-    Key? key,
+    super.key,
     required this.messages,
     required this.onSendMessage,
     required this.currentUser,
-  }) : super(key: key);
+  });
 
   @override
   State<ChatPanel> createState() => _ChatPanelState();

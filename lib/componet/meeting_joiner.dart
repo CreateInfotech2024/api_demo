@@ -6,10 +6,10 @@ class MeetingJoiner extends StatefulWidget {
   final Function(String error) onError;
 
   const MeetingJoiner({
-    Key? key,
+    super.key,
     required this.onMeetingJoined,
     required this.onError,
-  }) : super(key: key);
+  });
 
   @override
   State<MeetingJoiner> createState() => _MeetingJoinerState();

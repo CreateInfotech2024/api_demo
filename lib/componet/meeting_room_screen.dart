@@ -13,10 +13,10 @@ class MeetingRoomScreen extends StatefulWidget {
   final bool host;
 
   const MeetingRoomScreen({
-    Key? key,
+    super.key,
     required this.course,
     required this.currentParticipant, required this.host,
-  }) : super(key: key);
+  });
 
   @override
   _MeetingRoomScreenState createState() => _MeetingRoomScreenState();
@@ -416,7 +416,7 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
             ),
           ),
           if (isChatVisible)
-            Container(
+            SizedBox(
               width: 300,
               child: Column(
                 children: [
