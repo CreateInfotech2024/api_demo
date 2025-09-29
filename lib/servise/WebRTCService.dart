@@ -1,5 +1,6 @@
 import 'dart:developer' as developer;
 import 'package:api_demo/servise/socketService.dart';
+import 'package:api_demo/config/mobile_optimizations.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 class MediaStates {
@@ -71,32 +72,16 @@ class WebRTCService {
     socket.onScreenShareIceCandidate(_handleScreenShareIceCandidate);
   }
 
-  // Initialize local media (camera and microphone)
+  // Initialize local media (camera and microphone) with mobile optimizations
   Future<MediaStream?> initializeLocalMedia() async {
     try {
-      // Mobile-friendly media constraints
-      final Map<String, dynamic> mediaConstraints = {
-        'audio': {
-          'echoCancellation': true,
-          'noiseSuppression': true,
-          'autoGainControl': true,
-        },
-        'video': {
-          'mandatory': {
-            'minWidth': '320',
-            'minHeight': '240',
-            'maxWidth': '1280',
-            'maxHeight': '720',
-            'minFrameRate': '15',
-            'maxFrameRate': '30',
-          },
-          'facingMode': 'user',
-          'optional': [],
-        }
-      };
+      // Use mobile-optimized media constraints
+      final mediaConstraints = MobileOptimizations.getMobileOptimizedMediaConstraints();
+      
+      developer.log('🎥 Initializing media with ${MobileOptimizations.isMobile ? "mobile" : "desktop"} constraints');
 
       _localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
-      developer.log('✅ Local media initialized with mobile-friendly constraints');
+      developer.log('✅ Local media initialized successfully');
       return _localStream;
     } catch (error) {
       developer.log('❌ Failed to initialize local media: $error');
@@ -107,8 +92,8 @@ class WebRTCService {
           'audio': true,
           'video': {
             'facingMode': 'user',
-            'width': {'ideal': 640},
-            'height': {'ideal': 480},
+            'width': {'ideal': MobileOptimizations.isMobile ? 480 : 640},
+            'height': {'ideal': MobileOptimizations.isMobile ? 360 : 480},
           }
         };
         
@@ -117,19 +102,20 @@ class WebRTCService {
         return _localStream;
       } catch (fallbackError) {
         developer.log('❌ Fallback media initialization also failed: $fallbackError');
-        rethrow;
+        
+        // Provide mobile-specific error message
+        final mobileError = MobileOptimizations.getMobileErrorMessage(fallbackError.toString());
+        throw Exception(mobileError);
       }
     }
   }
 
   // Create peer connection for a participant
   Future<RTCPeerConnection> _createPeerConnection(String participantId) async {
-    final Map<String, dynamic> configuration = {
-      'iceServers': [
-        {'urls': 'stun:stun.l.google.com:19302'},
-        {'urls': 'stun:stun1.l.google.com:19302'},
-      ]
-    };
+    // Use mobile-optimized WebRTC configuration
+    final configuration = MobileOptimizations.getWebRTCConfiguration();
+    
+    developer.log('🔗 Creating peer connection for $participantId with ${MobileOptimizations.isMobile ? "mobile" : "desktop"} config');
 
     final RTCPeerConnection peerConnection = await createPeerConnection(configuration);
 
@@ -285,78 +271,152 @@ class WebRTCService {
     return false;
   }
 
-  // Start screen sharing
+  // Start screen sharing (enhanced for mobile and web compatibility)
   Future<MediaStream?> startScreenShare() async {
     try {
-      // Mobile-friendly screen sharing constraints
-      final Map<String, dynamic> mediaConstraints = {
-        'video': {
-          'mediaSource': 'screen',
-          'width': {'max': 1920},
-          'height': {'max': 1080},
-          'frameRate': {'max': 15}, // Lower frame rate for better mobile performance
-        },
-        'audio': true, // Include system audio if supported
-      };
+      developer.log('🖥️ Starting screen sharing...');
+      
+      // Use mobile-optimized screen sharing constraints
+      final constraintOptions = MobileOptimizations.getScreenSharingConstraints();
 
-      try {
-        _screenStream = await navigator.mediaDevices.getDisplayMedia(mediaConstraints);
-      } catch (e) {
-        // Fallback for mobile devices that might not support all constraints
-        final fallbackConstraints = {
-          'video': true,
-          'audio': false, // Disable audio if causing issues on mobile
-        };
-        _screenStream = await navigator.mediaDevices.getDisplayMedia(fallbackConstraints);
+      MediaStream? screenStream;
+      String? usedConstraints;
+      
+      // Try each constraint option until one works
+      for (int i = 0; i < constraintOptions.length; i++) {
+        try {
+          developer.log('🔄 Trying screen share constraint option ${i + 1}...');
+          screenStream = await navigator.mediaDevices.getDisplayMedia(constraintOptions[i]);
+          usedConstraints = 'Option ${i + 1} (${MobileOptimizations.isMobile ? "mobile" : "desktop"})';
+          developer.log('✅ Screen sharing started with $usedConstraints');
+          break;
+        } catch (e) {
+          developer.log('⚠️ Screen share constraint option ${i + 1} failed: $e');
+          if (i == constraintOptions.length - 1) {
+            throw e; // Re-throw if all options failed
+          }
+        }
       }
 
+      if (screenStream == null) {
+        throw Exception('Failed to get screen stream with all constraint options');
+      }
+
+      _screenStream = screenStream;
       _isScreenSharing = true;
+      
+      // Notify other participants about screen sharing
       SocketService().startScreenShare();
 
-      // Replace video track in all peer connections
+      // Replace video track in all peer connections for SFU
       final videoTrack = _screenStream!.getVideoTracks().first;
+      int replacedConnections = 0;
+      
       for (var entry in _peerConnections.entries) {
+        final participantId = entry.key;
         final peerConnection = entry.value;
-        final senders = await peerConnection.getSenders();
-        final videoSender = senders.firstWhere(
-              (sender) => sender.track?.kind == 'video',
-          orElse: () => throw StateError('No video sender found'),
-        );
-        await videoSender.replaceTrack(videoTrack);
+        
+        try {
+          final senders = await peerConnection.getSenders();
+          final videoSender = senders.firstWhere(
+            (sender) => sender.track?.kind == 'video',
+            orElse: () => throw StateError('No video sender found'),
+          );
+          await videoSender.replaceTrack(videoTrack);
+          replacedConnections++;
+          developer.log('✅ Replaced video track for participant: $participantId');
+        } catch (e) {
+          developer.log('⚠️ Failed to replace track for $participantId: $e');
+        }
       }
 
-      // Listen for screen share end
+      developer.log('📡 Screen sharing track replaced in $replacedConnections peer connections');
+
+      // Listen for screen share end (when user stops sharing from browser)
       videoTrack.onEnded = () {
+        developer.log('🛑 Screen sharing ended by user');
         stopScreenShare();
       };
 
       return _screenStream;
     } catch (error) {
       developer.log('❌ Failed to start screen sharing: $error');
-      rethrow;
+      _isScreenSharing = false;
+      
+      // Use mobile-specific error message
+      final mobileError = MobileOptimizations.getMobileErrorMessage(error.toString());
+      throw Exception(mobileError);
     }
   }
 
-  // Stop screen sharing
+  // Helper method to detect mobile devices (enhanced)
+  bool _isMobileDevice() {
+    return MobileOptimizations.isMobile;
+  }
+
+  // Stop screen sharing (enhanced cleanup)
   Future<void> stopScreenShare() async {
-    if (_screenStream != null) {
-      _screenStream!.getTracks().forEach((track) => track.stop());
-      _screenStream = null;
+    try {
+      developer.log('🛑 Stopping screen sharing...');
+      
+      if (_screenStream != null) {
+        // Stop all tracks in the screen stream
+        _screenStream!.getTracks().forEach((track) {
+          track.stop();
+          developer.log('🔇 Stopped track: ${track.kind}');
+        });
+        
+        // Dispose the stream
+        await _screenStream!.dispose();
+        _screenStream = null;
+      }
+      
       _isScreenSharing = false;
+      
+      // Notify other participants
       SocketService().stopScreenShare();
 
-      // Replace back to camera
+      // Replace back to camera stream in all peer connections
       if (_localStream != null) {
-        final videoTrack = _localStream!.getVideoTracks().first;
-        for (var entry in _peerConnections.entries) {
-          final peerConnection = entry.value;
-          final senders = await peerConnection.getSenders();
-          final videoSender = senders.firstWhere(
+        final videoTracks = _localStream!.getVideoTracks();
+        if (videoTracks.isNotEmpty) {
+          final cameraVideoTrack = videoTracks.first;
+          int replacedConnections = 0;
+          
+          for (var entry in _peerConnections.entries) {
+            final participantId = entry.key;
+            final peerConnection = entry.value;
+            
+            try {
+              final senders = await peerConnection.getSenders();
+              final videoSender = senders.firstWhere(
                 (sender) => sender.track?.kind == 'video',
-            orElse: () => throw StateError('No video sender found'),
-          );
-          await videoSender.replaceTrack(videoTrack);
+                orElse: () => throw StateError('No video sender found'),
+              );
+              await videoSender.replaceTrack(cameraVideoTrack);
+              replacedConnections++;
+              developer.log('✅ Restored camera track for participant: $participantId');
+            } catch (e) {
+              developer.log('⚠️ Failed to restore camera track for $participantId: $e');
+            }
+          }
+          
+          developer.log('📹 Camera track restored in $replacedConnections peer connections');
+        } else {
+          developer.log('⚠️ No camera video track available to restore');
         }
+      } else {
+        developer.log('⚠️ No local stream available to restore camera');
+      }
+      
+      developer.log('✅ Screen sharing stopped successfully');
+    } catch (error) {
+      developer.log('❌ Error stopping screen sharing: $error');
+      // Ensure state is reset even if there's an error
+      _isScreenSharing = false;
+      if (_screenStream != null) {
+        _screenStream!.getTracks().forEach((track) => track.stop());
+        _screenStream = null;
       }
     }
   }
@@ -400,43 +460,126 @@ class WebRTCService {
   }
 
   // Debug method to check connection status
+  // Enhanced connection monitoring for debugging and reliability
   void logConnectionStatus() {
-    developer.log('📊 WebRTC Connection Status:');
+    developer.log('📊 === WebRTC Connection Status ===');
     developer.log('  Local stream: ${_localStream != null ? "Active" : "None"}');
     developer.log('  Screen stream: ${_screenStream != null ? "Active" : "None"}');
+    developer.log('  Audio enabled: $_isAudioEnabled');
+    developer.log('  Video enabled: $_isVideoEnabled');
+    developer.log('  Screen sharing: $_isScreenSharing');
     developer.log('  Peer connections: ${_peerConnections.length}');
     developer.log('  Remote streams: ${_remoteStreams.length}');
     
     for (var entry in _peerConnections.entries) {
-      developer.log('  - ${entry.key}: ${entry.value.connectionState}');
+      final participantId = entry.key;
+      final connection = entry.value;
+      final state = connection.connectionState;
+      final iceState = connection.iceConnectionState;
+      developer.log('  - $participantId: Connection=$state, ICE=$iceState');
+    }
+    developer.log('=======================================');
+  }
+
+  // Get detailed connection statistics for troubleshooting
+  Future<Map<String, dynamic>> getConnectionStats() async {
+    final stats = <String, dynamic>{
+      'localStream': _localStream != null,
+      'screenStream': _screenStream != null,
+      'isAudioEnabled': _isAudioEnabled,
+      'isVideoEnabled': _isVideoEnabled,
+      'isScreenSharing': _isScreenSharing,
+      'peerConnections': <String, dynamic>{},
+      'remoteStreams': _remoteStreams.keys.toList(),
+    };
+
+    for (var entry in _peerConnections.entries) {
+      final participantId = entry.key;
+      final connection = entry.value;
+      
+      stats['peerConnections'][participantId] = {
+        'connectionState': connection.connectionState.toString(),
+        'iceConnectionState': connection.iceConnectionState.toString(),
+        'signalingState': connection.signalingState.toString(),
+      };
+    }
+
+    return stats;
+  }
+
+  // Enhanced cleanup with better error handling
+  Future<void> cleanup() async {
+    developer.log('🧹 Cleaning up WebRTC resources...');
+    
+    try {
+      // Stop and dispose local stream
+      if (_localStream != null) {
+        _localStream!.getTracks().forEach((track) => track.stop());
+        await _localStream!.dispose();
+        _localStream = null;
+        developer.log('✅ Local stream disposed');
+      }
+
+      // Stop screen stream
+      if (_screenStream != null) {
+        _screenStream!.getTracks().forEach((track) => track.stop());
+        await _screenStream!.dispose();
+        _screenStream = null;
+        developer.log('✅ Screen stream disposed');
+      }
+
+      // Close all peer connections
+      for (var entry in _peerConnections.entries) {
+        final participantId = entry.key;
+        try {
+          await entry.value.close();
+          developer.log('✅ Peer connection closed for: $participantId');
+        } catch (e) {
+          developer.log('⚠️ Error closing peer connection for $participantId: $e');
+        }
+      }
+      _peerConnections.clear();
+
+      // Clear remote streams
+      _remoteStreams.clear();
+      
+      // Clear callbacks
+      _mediaStreamCallbacks.clear();
+
+      // Reset state
+      _isAudioEnabled = true;
+      _isVideoEnabled = true;
+      _isScreenSharing = false;
+      
+      developer.log('🧹 WebRTC cleanup completed successfully');
+    } catch (error) {
+      developer.log('❌ Error during WebRTC cleanup: $error');
     }
   }
 
-  // Clean up resources
-  Future<void> cleanup() async {
-    // Stop local stream
-    if (_localStream != null) {
-      _localStream!.getTracks().forEach((track) => track.stop());
-      await _localStream!.dispose();
-      _localStream = null;
+  // Reconnect functionality for handling connection failures
+  Future<void> reconnectToParticipant(String participantId) async {
+    developer.log('🔄 Reconnecting to participant: $participantId');
+    
+    try {
+      // Close existing connection if it exists
+      final existingConnection = _peerConnections[participantId];
+      if (existingConnection != null) {
+        await existingConnection.close();
+        _peerConnections.remove(participantId);
+      }
+      
+      // Remove old remote stream
+      _remoteStreams.remove(participantId);
+      
+      // Create new connection and offer
+      await Future.delayed(Duration(seconds: 1)); // Brief delay before reconnecting
+      await createOffer(participantId);
+      
+      developer.log('✅ Reconnection initiated for: $participantId');
+    } catch (error) {
+      developer.log('❌ Failed to reconnect to $participantId: $error');
     }
-
-    // Stop screen stream
-    if (_screenStream != null) {
-      _screenStream!.getTracks().forEach((track) => track.stop());
-      await _screenStream!.dispose();
-      _screenStream = null;
-    }
-
-    // Close all peer connections
-    for (var entry in _peerConnections.entries) {
-      await entry.value.close();
-    }
-
-    // Clear maps
-    _peerConnections.clear();
-    _remoteStreams.clear();
-    _mediaStreamCallbacks.clear();
   }
 
   // Remove participant

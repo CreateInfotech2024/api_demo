@@ -56,6 +56,8 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
       // Initialize WebRTC
       final webrtcService = context.read<WebRTCService>();
       
+      _showInfo('Initializing camera and microphone...');
+      
       // Initialize media for all participants (both host and non-host)
       MediaStream? stream;
       if (widget.currentParticipant.isHost!) {
@@ -63,6 +65,7 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
         stream = await webrtcService.initializeLocalMedia();
         if (stream != null) {
           await localRenderer.setSrcObject(stream);
+          _showSuccess('Camera and microphone initialized successfully!');
         }
       } else {
         // Non-host participants also initialize media to be visible and audible
@@ -71,9 +74,11 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
           if (stream != null) {
             await localRenderer.setSrcObject(stream);
             print('✅ Non-host participant media initialized successfully');
+            _showSuccess('Joined meeting successfully!');
           }
         } catch (e) {
           print('⚠️ Non-host participant media initialization failed: $e');
+          _showError('Could not access camera/microphone. You can still join as viewer.');
           // Continue without local media - participant can still view others
         }
       }
@@ -86,9 +91,19 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
         _updateRemoteStreamRenderer(stream);
       });
 
-      // Connect to Socket.IO
+      // Connect to Socket.IO with better error handling
       final socketService = context.read<SocketService>();
-      await socketService.connect();
+      
+      _showInfo('Connecting to meeting server...');
+      
+      try {
+        await socketService.connect();
+        _showSuccess('Connected to meeting server!');
+      } catch (e) {
+        print('Socket connection failed: $e');
+        _showError('Could not connect to server. Working in offline mode.');
+        // Continue in offline mode for peer-to-peer connections
+      }
 
       // Join meeting room
       if (widget.course.meetingCode != null) {
@@ -122,7 +137,18 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
 
     } catch (e) {
       print('Initialization error: $e');
-      _showError('Failed to initialize meeting room: ${e.toString()}');
+      String errorMessage = 'Failed to initialize meeting room';
+      
+      // Provide more specific error messages
+      if (e.toString().contains('camera') || e.toString().contains('video')) {
+        errorMessage = 'Could not access camera. Check if another app is using it or grant camera permission.';
+      } else if (e.toString().contains('microphone') || e.toString().contains('audio')) {
+        errorMessage = 'Could not access microphone. Check if another app is using it or grant microphone permission.';
+      } else if (e.toString().contains('network') || e.toString().contains('connection')) {
+        errorMessage = 'Network connection failed. Check your internet connection and try again.';
+      }
+      
+      _showError(errorMessage);
     } finally {
       setState(() {
         isInitializingMedia = false;
@@ -270,6 +296,7 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
       final webrtcService = context.read<WebRTCService>();
 
       if (isScreenSharing) {
+        // Stop screen sharing
         await webrtcService.stopScreenShare();
         setState(() {
           isScreenSharing = false;
@@ -279,27 +306,60 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
         if (stream != null) {
           await localRenderer.setSrcObject(stream);
         }
+        _addSystemMessage('You stopped screen sharing');
       } else {
-        // Ensure we have proper permissions and local media before screen sharing
-        if (webrtcService.getLocalStream() == null) {
-          await webrtcService.initializeLocalMedia();
-        }
-        
-        final screenStream = await webrtcService.startScreenShare();
+        // Start screen sharing with better user feedback
         setState(() {
-          isScreenSharing = true;
+          isInitializingMedia = true;
         });
-        // Show screen share in local video - add safety checks
-        if (screenStream != null) {
-          await localRenderer.setSrcObject(screenStream);
+        
+        try {
+          // Show user that we're preparing screen sharing
+          _showInfo('Preparing screen sharing...');
+          
+          // Ensure we have proper permissions and local media before screen sharing
+          if (webrtcService.getLocalStream() == null) {
+            await webrtcService.initializeLocalMedia();
+          }
+          
+          final screenStream = await webrtcService.startScreenShare();
+          setState(() {
+            isScreenSharing = true;
+          });
+          
+          // Show screen share in local video - add safety checks
+          if (screenStream != null) {
+            await localRenderer.setSrcObject(screenStream);
+            _addSystemMessage('You started screen sharing');
+            _showSuccess('Screen sharing started successfully!');
+          }
+        } finally {
+          setState(() {
+            isInitializingMedia = false;
+          });
         }
       }
     } catch (e) {
       setState(() {
         isScreenSharing = false; // Reset state on error
+        isInitializingMedia = false;
       });
+      
+      String errorMessage = 'Failed to toggle screen sharing';
+      
+      // Provide more specific error messages
+      if (e.toString().contains('permission denied') || e.toString().contains('NotAllowedError')) {
+        errorMessage = 'Screen sharing permission denied. Please allow screen sharing access in your browser settings.';
+      } else if (e.toString().contains('not supported') || e.toString().contains('NotSupportedError')) {
+        errorMessage = 'Screen sharing is not supported on this device or browser. Try using a desktop browser like Chrome or Firefox.';
+      } else if (e.toString().contains('cancelled') || e.toString().contains('AbortError')) {
+        errorMessage = 'Screen sharing was cancelled. Click the screen share button to try again.';
+      } else if (e.toString().contains('no source')) {
+        errorMessage = 'No screen or window was selected for sharing. Please select a screen or window to share.';
+      }
+      
       print('Screen sharing error: $e');
-      _showError('Failed to toggle screen sharing: ${e.toString()}');
+      _showError(errorMessage);
     }
   }
 
@@ -694,8 +754,47 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
+        content: Row(
+          children: [
+            Icon(Icons.error, color: Colors.white),
+            SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
         backgroundColor: Colors.red,
+        duration: Duration(seconds: 4),
+      ),
+    );
+  }
+
+  void _showSuccess(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.white),
+            SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: Colors.green,
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _showInfo(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.info, color: Colors.white),
+            SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: Colors.blue,
+        duration: Duration(seconds: 2),
       ),
     );
   }
