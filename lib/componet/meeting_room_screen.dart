@@ -31,6 +31,8 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
   bool isVideoEnabled = true;
   bool isScreenSharing = false;
   bool isInitializingMedia = false;
+  bool isGridViewEnabled = false; // Toggle between grid and speaker view
+  String networkQuality = 'good'; // good, fair, poor
 
   RTCVideoRenderer localRenderer = RTCVideoRenderer();
   Map<String, RTCVideoRenderer> remoteRenderers = {};
@@ -339,24 +341,54 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
       
       print('🔄 Updating remote stream renderer for ${remoteStreams.length} remote streams');
       
+      String? foundParticipantId;
       for (var entry in remoteStreams.entries) {
         if (entry.value == stream) {
-          print('📺 Found matching stream for participant: ${entry.key}');
-          
-          // Initialize renderer if it doesn't exist
-          if (!remoteRenderers.containsKey(entry.key)) {
-            await _initializeRemoteRenderer(entry.key);
-          }
-          
-          final renderer = remoteRenderers[entry.key];
-          if (renderer != null) {
+          foundParticipantId = entry.key;
+          break;
+        }
+      }
+      
+      if (foundParticipantId != null) {
+        print('📺 Found matching stream for participant: $foundParticipantId');
+        
+        // Initialize renderer if it doesn't exist
+        if (!remoteRenderers.containsKey(foundParticipantId)) {
+          await _initializeRemoteRenderer(foundParticipantId);
+        }
+        
+        final renderer = remoteRenderers[foundParticipantId];
+        if (renderer != null) {
+          try {
             await renderer.setSrcObject(stream);
-            print('✅ Successfully set remote stream for ${entry.key}');
+            print('✅ Successfully set remote stream for $foundParticipantId');
+            
+            // Verify the stream has active tracks
+            final videoTracks = stream.getVideoTracks();
+            final audioTracks = stream.getAudioTracks();
+            print('  - Video tracks: ${videoTracks.length} (enabled: ${videoTracks.where((t) => t.enabled).length})');
+            print('  - Audio tracks: ${audioTracks.length} (enabled: ${audioTracks.where((t) => t.enabled).length})');
+            
             setState(() {
               // Force rebuild to show new remote streams
             });
+          } catch (rendererError) {
+            print('❌ Error setting stream to renderer: $rendererError');
+            // Try to recreate the renderer
+            await _cleanupRemoteRenderer(foundParticipantId);
+            await _initializeRemoteRenderer(foundParticipantId);
+            final newRenderer = remoteRenderers[foundParticipantId];
+            if (newRenderer != null) {
+              await newRenderer.setSrcObject(stream);
+              setState(() {});
+            }
           }
-          break;
+        }
+      } else {
+        print('⚠️ Could not find participant ID for received stream');
+        // Log available streams for debugging
+        for (var entry in remoteStreams.entries) {
+          print('  - Available stream: ${entry.key}');
         }
       }
     } catch (e) {
@@ -389,6 +421,149 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
     }
   }
 
+  Widget _buildParticipantGrid() {
+    List<Widget> videoWidgets = [];
+    
+    // Add local video if available
+    if (localRenderer.srcObject != null) {
+      videoWidgets.add(_buildGridVideoTile(
+        renderer: localRenderer,
+        participantName: widget.currentParticipant.isHost! ? '👑 You (Host)' : 'You',
+        isLocal: true,
+      ));
+    }
+    
+    // Add remote videos
+    for (var entry in remoteRenderers.entries) {
+      if (entry.value.srcObject != null) {
+        final participant = participants.firstWhere(
+          (p) => p.id == entry.key,
+          orElse: () => Participant(id: entry.key, name: entry.key, isHost: false),
+        );
+        videoWidgets.add(_buildGridVideoTile(
+          renderer: entry.value,
+          participantName: participant.isHost ? '👑 ${participant.name} (Host)' : participant.name,
+          isLocal: false,
+        ));
+      }
+    }
+    
+    if (videoWidgets.isEmpty) {
+      return Center(
+        child: Text(
+          'No video streams available',
+          style: TextStyle(color: Colors.white70, fontSize: 16),
+        ),
+      );
+    }
+    
+    // Calculate grid dimensions
+    int crossAxisCount = videoWidgets.length <= 2 ? 1 : 2;
+    if (videoWidgets.length > 4) crossAxisCount = 3;
+    if (videoWidgets.length > 9) crossAxisCount = 4;
+    
+    return Padding(
+      padding: EdgeInsets.all(8),
+      child: GridView.count(
+        crossAxisCount: crossAxisCount,
+        childAspectRatio: 16/9,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        children: videoWidgets,
+      ),
+    );
+  }
+  
+  Widget _buildGridVideoTile({
+    required RTCVideoRenderer renderer,
+    required String participantName,
+    required bool isLocal,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey[800],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: participantName.contains('Host') ? Colors.orange : Colors.white24,
+          width: participantName.contains('Host') ? 2 : 1,
+        ),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(7),
+        child: Stack(
+          children: [
+            RTCVideoView(
+              renderer,
+              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+              mirror: isLocal && !isScreenSharing,
+            ),
+            
+            // Participant name
+            Positioned(
+              bottom: 8,
+              left: 8,
+              right: 8,
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black70,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  participantName,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            
+            // Status indicators for local user
+            if (isLocal)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: isVideoEnabled ? Colors.green : Colors.red,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        isVideoEnabled ? Icons.videocam : Icons.videocam_off,
+                        size: 12,
+                        color: Colors.white,
+                      ),
+                    ),
+                    SizedBox(width: 4),
+                    Container(
+                      padding: EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: isAudioEnabled ? Colors.green : Colors.red,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        isAudioEnabled ? Icons.mic : Icons.mic_off,
+                        size: 12,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   List<Widget> _buildParticipantThumbnails() {
     final otherParticipants = participants
         .where((p) => p.id != widget.currentParticipant.id)
@@ -397,6 +572,28 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
     return otherParticipants.map((participant) {
       final hasRenderer = remoteRenderers.containsKey(participant.id);
       final renderer = remoteRenderers[participant.id];
+      final webrtcService = context.read<WebRTCService>();
+      final connectionState = webrtcService.getConnectionState(participant.id);
+      final hasActiveStream = webrtcService.hasRemoteStream(participant.id);
+      
+      // Determine connection status
+      String statusText = 'Connecting...';
+      Color statusColor = Colors.orange;
+      IconData statusIcon = Icons.hourglass_empty;
+      
+      if (connectionState == RTCPeerConnectionState.RTCPeerConnectionStateConnected && hasActiveStream) {
+        statusText = 'Connected';
+        statusColor = Colors.green;
+        statusIcon = Icons.videocam;
+      } else if (connectionState == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
+        statusText = 'Connection failed';
+        statusColor = Colors.red;
+        statusIcon = Icons.error_outline;
+      } else if (connectionState == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
+        statusText = 'Disconnected';
+        statusColor = Colors.red;
+        statusIcon = Icons.videocam_off;
+      }
       
       return Container(
         margin: EdgeInsets.only(bottom: 8),
@@ -405,7 +602,10 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
         decoration: BoxDecoration(
           color: Colors.grey[800],
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.white, width: 1),
+          border: Border.all(
+            color: participant.isHost ? Colors.orange : Colors.white, 
+            width: participant.isHost ? 2 : 1
+          ),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(7),
@@ -421,15 +621,17 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.person, size: 24, color: Colors.white54),
+                      Icon(statusIcon, size: 24, color: statusColor),
                       SizedBox(height: 4),
                       Text(
-                        'Connecting...',
-                        style: TextStyle(color: Colors.white54, fontSize: 10),
+                        statusText,
+                        style: TextStyle(color: Colors.white54, fontSize: 9),
                       ),
                     ],
                   ),
                 ),
+              
+              // Participant name with better styling
               Positioned(
                 bottom: 4,
                 left: 4,
@@ -437,23 +639,51 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
                 child: Container(
                   padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                   decoration: BoxDecoration(
-                    color: Colors.black54,
+                    color: Colors.black70,
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
                     participant.name,
-                    style: TextStyle(color: Colors.white, fontSize: 10),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                    ),
                     textAlign: TextAlign.center,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ),
+              
+              // Host indicator with better styling
               if (participant.isHost)
                 Positioned(
                   top: 4,
                   left: 4,
-                  child: Icon(Icons.star, size: 12, color: Colors.orange),
+                  child: Container(
+                    padding: EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.orange,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.star, size: 10, color: Colors.white),
+                  ),
                 ),
+              
+              // Connection status indicator
+              Positioned(
+                top: 4,
+                right: 4,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: statusColor,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -565,87 +795,306 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
                     )
                         : Stack(
                       children: [
-                        // Main video area - show host video to all participants, or local video if user is host
-                        if (widget.currentParticipant.isHost! && localRenderer.srcObject != null)
-                          // Host shows their own video in main area
-                          RTCVideoView(
-                            localRenderer,
-                            objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                          )
-                        else if (remoteRenderers.isNotEmpty)
-                          // Participants see host or other participants' video in main area
+                        // Main video area - Google Meet style video display (only show if not in grid mode)
+                        if (!isGridViewEnabled && remoteRenderers.isNotEmpty)
+                          // Participants see remote participants (prioritizing host) in main area
                           Builder(
                             builder: (context) {
-                              // Prioritize showing host video if available, otherwise show any remote video
+                              // Find the best remote stream to display (prioritize host)
+                              RTCVideoRenderer? bestRenderer;
+                              String? bestParticipantName;
+                              
+                              // First, try to find host's video
                               final hostParticipant = participants.firstWhere(
                                 (p) => p.isHost == true && p.id != widget.currentParticipant.id,
-                                orElse: () => participants.firstWhere(
-                                  (p) => p.id != widget.currentParticipant.id,
-                                  orElse: () => participants.first,
-                                ),
+                                orElse: () => Participant(id: '', name: '', isHost: false),
                               );
                               
-                              final hostRenderer = remoteRenderers[hostParticipant.id];
-                              if (hostRenderer != null && hostRenderer.srcObject != null) {
-                                return RTCVideoView(
-                                  hostRenderer,
-                                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                              if (hostParticipant.id.isNotEmpty) {
+                                final hostRenderer = remoteRenderers[hostParticipant.id];
+                                if (hostRenderer != null && hostRenderer.srcObject != null) {
+                                  // Check if host's video stream is active
+                                  final stream = hostRenderer.srcObject as MediaStream?;
+                                  if (stream != null && stream.getVideoTracks().isNotEmpty) {
+                                    final videoTrack = stream.getVideoTracks().first;
+                                    if (videoTrack.enabled) {
+                                      bestRenderer = hostRenderer;
+                                      bestParticipantName = '👑 ${hostParticipant.name} (Host)';
+                                    }
+                                  }
+                                }
+                              }
+                              
+                              // If no host video, find any active remote stream
+                              if (bestRenderer == null) {
+                                for (var entry in remoteRenderers.entries) {
+                                  final renderer = entry.value;
+                                  if (renderer.srcObject != null) {
+                                    final stream = renderer.srcObject as MediaStream?;
+                                    if (stream != null && stream.getVideoTracks().isNotEmpty) {
+                                      final videoTrack = stream.getVideoTracks().first;
+                                      if (videoTrack.enabled) {
+                                        bestRenderer = renderer;
+                                        final participant = participants.firstWhere(
+                                          (p) => p.id == entry.key,
+                                          orElse: () => Participant(id: entry.key, name: entry.key, isHost: false),
+                                        );
+                                        bestParticipantName = participant.name;
+                                        break;
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                              
+                              if (bestRenderer != null) {
+                                return Stack(
+                                  children: [
+                                    RTCVideoView(
+                                      bestRenderer,
+                                      objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                    ),
+                                    // Show participant name in main video
+                                    if (bestParticipantName != null)
+                                      Positioned(
+                                        bottom: 16,
+                                        left: 16,
+                                        child: Container(
+                                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black54,
+                                            borderRadius: BorderRadius.circular(20),
+                                          ),
+                                          child: Text(
+                                            bestParticipantName,
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 );
                               }
                               
-                              // Fallback to any available remote stream
-                              final firstAvailableRenderer = remoteRenderers.values
+                              // Fallback to any available renderer
+                              final fallbackRenderer = remoteRenderers.values
                                   .firstWhere((renderer) => renderer.srcObject != null,
                                   orElse: () => remoteRenderers.values.first);
                               return RTCVideoView(
-                                firstAvailableRenderer,
+                                fallbackRenderer,
                                 objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                               );
                             },
                           )
-                        else if (!widget.currentParticipant.isHost! && localRenderer.srcObject != null)
-                          // Non-host participants can see their own video if no remote streams
-                          RTCVideoView(
-                            localRenderer,
-                            objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                        else if (!isGridViewEnabled && widget.currentParticipant.isHost! && localRenderer.srcObject != null)
+                          // Host shows their own video in main area when no participants joined
+                          Stack(
+                            children: [
+                              RTCVideoView(
+                                localRenderer,
+                                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                              ),
+                              Positioned(
+                                bottom: 16,
+                                left: 16,
+                                child: Container(
+                                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black54,
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    '👑 You (Host)',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           )
-                        else
-                          // Waiting for participants
+                        else if (!isGridViewEnabled && !widget.currentParticipant.isHost! && localRenderer.srcObject != null)
+                          // Non-host participants can see their own video if no remote streams
+                          Stack(
+                            children: [
+                              RTCVideoView(
+                                localRenderer,
+                                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                              ),
+                              Positioned(
+                                bottom: 16,
+                                left: 16,
+                                child: Container(
+                                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black54,
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    'You',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        else if (!isGridViewEnabled)
+                          // Waiting for participants with Google Meet-like styling
                           Center(
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.people_outline, size: 64, color: Colors.white54),
-                                SizedBox(height: 16),
+                                Container(
+                                  width: 120,
+                                  height: 120,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[800],
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white24, width: 2),
+                                  ),
+                                  child: Icon(
+                                    Icons.people_outline, 
+                                    size: 64, 
+                                    color: Colors.white54
+                                  ),
+                                ),
+                                SizedBox(height: 24),
                                 Text(
                                   participants.length == 1 
-                                      ? '👥 Waiting for other participants to join...'
-                                      : '📹 Waiting for video streams...',
-                                  style: TextStyle(color: Colors.white, fontSize: 16),
+                                      ? 'Waiting for others to join...'
+                                      : 'Connecting to participants...',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                   textAlign: TextAlign.center,
                                 ),
+                                SizedBox(height: 8),
+                                Text(
+                                  participants.length == 1
+                                      ? 'Share the meeting code: ${widget.course.meetingCode ?? 'N/A'}'
+                                      : 'Setting up video connections with ${participants.length - 1} participant(s)...',
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 14,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                if (participants.length == 1) ...[
+                                  SizedBox(height: 16),
+                                  Container(
+                                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.blue.withOpacity(0.5)),
+                                    ),
+                                    child: Text(
+                                      '💡 Your camera and microphone are ready',
+                                      style: TextStyle(
+                                        color: Colors.blue[200],
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
                         
-                        // Participant thumbnails overlay
-                        if (participants.length > 1)
+                        // Participant thumbnails overlay - only show if we have a main video and not in grid view
+                        if (!isGridViewEnabled && participants.length > 1 && (remoteRenderers.isNotEmpty || (widget.currentParticipant.isHost! && localRenderer.srcObject != null)))
                           Positioned(
                             top: 16,
                             right: 16,
                             child: Container(
                               width: 120,
-                              child: Column(
-                                children: _buildParticipantThumbnails(),
+                              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+                              child: SingleChildScrollView(
+                                child: Column(
+                                  children: _buildParticipantThumbnails(),
+                                ),
                               ),
                             ),
                           ),
                         
-                        // Local video thumbnail (bottom left) - show for all participants when they have local stream
-                        if (localRenderer.srcObject != null)
+                        // Grid layout for many participants (4+ participants) or when grid view is enabled
+                        if ((participants.length >= 4 || isGridViewEnabled) && remoteRenderers.length >= 1)
+                          Positioned.fill(
+                            child: Container(
+                              color: Colors.black,
+                              child: _buildParticipantGrid(),
+                            ),
+                          ),
+                        
+                        // Participant count indicator
+                        if (participants.length > 1)
+                          Positioned(
+                            top: 16,
+                            left: isGridViewEnabled ? 80 : 16,
+                            child: Container(
+                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: Colors.white24),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.people, color: Colors.white, size: 16),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    '${participants.length}',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            top: 16,
+                            left: 16,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: IconButton(
+                                onPressed: () {
+                                  setState(() {
+                                    isGridViewEnabled = !isGridViewEnabled;
+                                  });
+                                },
+                                icon: Icon(
+                                  isGridViewEnabled ? Icons.person_pin : Icons.grid_view,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                                tooltip: isGridViewEnabled ? 'Switch to speaker view' : 'Switch to grid view',
+                              ),
+                            ),
+                          ),
+                        
+                        // Local video thumbnail (bottom right, Google Meet style) - show for all participants when they have local stream and not in grid view
+                        if (!isGridViewEnabled && localRenderer.srcObject != null && participants.length > 1)
                           Positioned(
                             bottom: 8,
-                            left: 8,
+                            right: 8,
                             child: Container(
                               width: 120,
                               height: 80,
@@ -653,6 +1102,13 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
                                 color: Colors.grey[800],
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(color: Colors.white, width: 2),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black45,
+                                    blurRadius: 8,
+                                    offset: Offset(0, 2),
+                                  ),
+                                ],
                               ),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(6),
@@ -661,20 +1117,72 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
                                     RTCVideoView(
                                       localRenderer,
                                       objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                      mirror: !isScreenSharing, // Mirror camera but not screen share
                                     ),
+                                    
+                                    // Video controls overlay
+                                    Positioned(
+                                      top: 4,
+                                      left: 4,
+                                      child: Row(
+                                        children: [
+                                          if (widget.currentParticipant.isHost!)
+                                            Container(
+                                              padding: EdgeInsets.all(2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.orange,
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: Icon(Icons.star, size: 8, color: Colors.white),
+                                            ),
+                                          SizedBox(width: 4),
+                                          Container(
+                                            padding: EdgeInsets.all(2),
+                                            decoration: BoxDecoration(
+                                              color: isVideoEnabled ? Colors.green : Colors.red,
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Icon(
+                                              isVideoEnabled ? Icons.videocam : Icons.videocam_off,
+                                              size: 8,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                          SizedBox(width: 2),
+                                          Container(
+                                            padding: EdgeInsets.all(2),
+                                            decoration: BoxDecoration(
+                                              color: isAudioEnabled ? Colors.green : Colors.red,
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Icon(
+                                              isAudioEnabled ? Icons.mic : Icons.mic_off,
+                                              size: 8,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    
+                                    // Name label
                                     Positioned(
                                       bottom: 4,
                                       left: 4,
                                       right: 4,
                                       child: Container(
-                                        padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                        padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                         decoration: BoxDecoration(
-                                          color: Colors.black54,
+                                          color: Colors.black70,
                                           borderRadius: BorderRadius.circular(4),
                                         ),
                                         child: Text(
-                                          'You (${isScreenSharing ? 'Screen' : 'Camera'})',
-                                          style: TextStyle(color: Colors.white, fontSize: 10),
+                                          isScreenSharing ? 'You (Screen)' : 'You',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w500,
+                                          ),
                                           textAlign: TextAlign.center,
                                         ),
                                       ),
@@ -684,41 +1192,142 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
                               ),
                             ),
                           ),
-                      ],
-                    ),
-                  ),
-                ),
+                        // Network quality indicator
+                        Positioned(
+                          top: 16,
+                          right: 16,
+                          child: Container(
+                            padding: EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.black54,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  networkQuality == 'good' ? Icons.wifi :
+                                  networkQuality == 'fair' ? Icons.wifi_2_bar :
+                                  Icons.wifi_off,
+                                  color: networkQuality == 'good' ? Colors.green :
+                                         networkQuality == 'fair' ? Colors.orange :
+                                         Colors.red,
+                                  size: 16,
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  networkQuality.toUpperCase(),
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                 Container(
                   padding: EdgeInsets.all(16),
-                  color: Colors.grey[900],
+                  decoration: BoxDecoration(
+                    color: Colors.grey[900],
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 8,
+                        offset: Offset(0, -2),
+                      ),
+                    ],
+                  ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      ElevatedButton.icon(
-                        onPressed: isInitializingMedia ? null : _toggleAudio,
-                        icon: Icon(isAudioEnabled ? Icons.mic : Icons.mic_off),
-                        label: Text(isAudioEnabled ? 'Mute' : 'Unmute'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: isAudioEnabled ? Colors.green : Colors.red,
-                          foregroundColor: Colors.white,
+                      // Audio button
+                      Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isAudioEnabled ? Colors.grey[800] : Colors.red,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black26,
+                              blurRadius: 4,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: IconButton(
+                          onPressed: isInitializingMedia ? null : _toggleAudio,
+                          icon: Icon(
+                            isAudioEnabled ? Icons.mic : Icons.mic_off,
+                            color: Colors.white,
+                          ),
+                          tooltip: isAudioEnabled ? 'Mute microphone' : 'Unmute microphone',
                         ),
                       ),
-                      ElevatedButton.icon(
-                        onPressed: isInitializingMedia ? null : _toggleVideo,
-                        icon: Icon(isVideoEnabled ? Icons.videocam : Icons.videocam_off),
-                        label: Text(isVideoEnabled ? 'Stop Video' : 'Start Video'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: isVideoEnabled ? Colors.blue : Colors.red,
-                          foregroundColor: Colors.white,
+                      
+                      // Video button
+                      Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isVideoEnabled ? Colors.grey[800] : Colors.red,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black26,
+                              blurRadius: 4,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: IconButton(
+                          onPressed: isInitializingMedia ? null : _toggleVideo,
+                          icon: Icon(
+                            isVideoEnabled ? Icons.videocam : Icons.videocam_off,
+                            color: Colors.white,
+                          ),
+                          tooltip: isVideoEnabled ? 'Turn off camera' : 'Turn on camera',
                         ),
                       ),
-                      ElevatedButton.icon(
-                        onPressed: isInitializingMedia ? null : _toggleScreenShare,
-                        icon: Icon(isScreenSharing ? Icons.stop_screen_share : Icons.screen_share),
-                        label: Text(isScreenSharing ? 'Stop Sharing' : 'Share Screen'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: isScreenSharing ? Colors.orange : Colors.purple,
-                          foregroundColor: Colors.white,
+                      
+                      // Screen share button
+                      Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isScreenSharing ? Colors.orange : Colors.grey[800],
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black26,
+                              blurRadius: 4,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: IconButton(
+                          onPressed: isInitializingMedia ? null : _toggleScreenShare,
+                          icon: Icon(
+                            isScreenSharing ? Icons.stop_screen_share : Icons.screen_share,
+                            color: Colors.white,
+                          ),
+                          tooltip: isScreenSharing ? 'Stop sharing screen' : 'Share screen',
+                        ),
+                      ),
+                      
+                      // Leave meeting button
+                      Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.red,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black26,
+                              blurRadius: 4,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: IconButton(
+                          onPressed: _leaveMeeting,
+                          icon: Icon(Icons.call_end, color: Colors.white),
+                          tooltip: 'Leave meeting',
                         ),
                       ),
                     ],

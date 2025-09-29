@@ -38,7 +38,28 @@ class WebRTCService {
     video: _isVideoEnabled,
     screenSharing: _isScreenSharing,
   );
-  MediaStream? getLocalStream() => _localStream;
+  // Set callback for remote streams
+  void onRemoteStream(Function(MediaStream) callback) {
+    _mediaStreamCallbacks['remoteStream'] = callback;
+    developer.log('✅ Remote stream callback registered');
+  }
+  
+  // Get connection state for a participant
+  RTCPeerConnectionState? getConnectionState(String participantId) {
+    return _peerConnections[participantId]?.connectionState;
+  }
+  
+  // Check if participant has active remote stream
+  bool hasRemoteStream(String participantId) {
+    final stream = _remoteStreams[participantId];
+    if (stream == null) return false;
+    
+    // Check if stream has active tracks
+    final videoTracks = stream.getVideoTracks();
+    final audioTracks = stream.getAudioTracks();
+    
+    return videoTracks.any((track) => track.enabled) || audioTracks.any((track) => track.enabled);
+  }
 
   void _setupSocketListeners() {
     final socket = SocketService();
@@ -112,18 +133,31 @@ class WebRTCService {
 
     final RTCPeerConnection peerConnection = await createPeerConnection(configuration);
 
-    // Handle incoming stream
+    // Handle incoming stream with better error handling
     peerConnection.onTrack = (RTCTrackEvent event) {
       developer.log('📺 Received remote stream from $participantId');
-      if (event.streams.isNotEmpty) {
-        _remoteStreams[participantId] = event.streams[0];
-        developer.log('✅ Added remote stream for $participantId');
-        
-        // Notify all callbacks about the new remote stream
-        final callback = _mediaStreamCallbacks['remoteStream'];
-        if (callback != null) {
-          callback(event.streams[0]);
+      try {
+        if (event.streams.isNotEmpty) {
+          final stream = event.streams[0];
+          _remoteStreams[participantId] = stream;
+          developer.log('✅ Added remote stream for $participantId with ${stream.getTracks().length} tracks');
+          
+          // Verify stream has both audio and video tracks
+          final audioTracks = stream.getAudioTracks();
+          final videoTracks = stream.getVideoTracks();
+          developer.log('  - Audio tracks: ${audioTracks.length}');
+          developer.log('  - Video tracks: ${videoTracks.length}');
+          
+          // Notify all callbacks about the new remote stream
+          final callback = _mediaStreamCallbacks['remoteStream'];
+          if (callback != null) {
+            callback(stream);
+          }
+        } else {
+          developer.log('⚠️ Received track event with no streams from $participantId');
         }
+      } catch (error) {
+        developer.log('❌ Error handling remote stream from $participantId: $error');
       }
     };
 
@@ -343,10 +377,7 @@ class WebRTCService {
     developer.log('📺 Received screen share ICE candidate: $data');
   }
 
-  // Set callback for remote streams
-  void onRemoteStream(Function(MediaStream) callback) {
-    _mediaStreamCallbacks['remoteStream'] = callback;
-  }
+
 
   // Create offer for a specific participant
   Future<void> createOffer(String participantId) async {
