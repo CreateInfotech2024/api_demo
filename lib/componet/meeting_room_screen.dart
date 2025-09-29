@@ -67,23 +67,11 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
       }
 
       // Setup WebRTC callbacks for remote streams
-      webrtcService.onRemoteStream((stream) async {
+      webrtcService.onRemoteStream((stream) {
         print('Received remote stream: $stream');
         
-        // Find the participant ID for this stream
-        final remoteStreams = webrtcService.remoteStreams;
-        for (var entry in remoteStreams.entries) {
-          if (entry.value == stream && remoteRenderers.containsKey(entry.key)) {
-            final renderer = remoteRenderers[entry.key];
-            if (renderer != null && !renderer.disposed) {
-              await renderer.setSrcObject(stream);
-              setState(() {
-                // Force rebuild to show new remote streams
-              });
-            }
-            break;
-          }
-        }
+        // Find the participant ID for this stream and update renderer
+        _updateRemoteStreamRenderer(stream);
       });
 
       // Connect to Socket.IO
@@ -120,7 +108,7 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
       });
     });
 
-    socketService.onParticipantJoined((data) async {
+    socketService.onParticipantJoined((data) {
       final newParticipant = Participant(
         id: data.participantId,
         name: data.participantName,
@@ -135,11 +123,9 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
         }
       });
 
-      // Initialize remote video renderer for new participant
+      // Initialize remote video renderer for new participant (async)
       if (!remoteRenderers.containsKey(data.participantId)) {
-        final renderer = RTCVideoRenderer();
-        await renderer.initialize();
-        remoteRenderers[data.participantId] = renderer;
+        _initializeRemoteRenderer(data.participantId);
       }
 
       _addSystemMessage('${data.participantName} joined the meeting');
@@ -148,16 +134,13 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
       context.read<WebRTCService>().createOffer(data.participantId);
     });
 
-    socketService.onParticipantLeft((data) async {
+    socketService.onParticipantLeft((data) {
       setState(() {
         participants.removeWhere((p) => p.id == data.participantId);
       });
 
-      // Clean up remote video renderer
-      if (remoteRenderers.containsKey(data.participantId)) {
-        await remoteRenderers[data.participantId]?.dispose();
-        remoteRenderers.remove(data.participantId);
-      }
+      // Clean up remote video renderer (async)
+      _cleanupRemoteRenderer(data.participantId);
 
       _addSystemMessage('${data.participantName} left the meeting');
 
@@ -317,6 +300,53 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
     Navigator.pop(context);
   }
 
+  Future<void> _updateRemoteStreamRenderer(MediaStream stream) async {
+    try {
+      final webrtcService = context.read<WebRTCService>();
+      final remoteStreams = webrtcService.remoteStreams;
+      
+      for (var entry in remoteStreams.entries) {
+        if (entry.value == stream && remoteRenderers.containsKey(entry.key)) {
+          final renderer = remoteRenderers[entry.key];
+          if (renderer != null && !renderer.disposed) {
+            await renderer.setSrcObject(stream);
+            setState(() {
+              // Force rebuild to show new remote streams
+            });
+          }
+          break;
+        }
+      }
+    } catch (e) {
+      print('Error updating remote stream renderer: $e');
+    }
+  }
+
+  Future<void> _initializeRemoteRenderer(String participantId) async {
+    try {
+      final renderer = RTCVideoRenderer();
+      await renderer.initialize();
+      setState(() {
+        remoteRenderers[participantId] = renderer;
+      });
+    } catch (e) {
+      print('Error initializing remote renderer for $participantId: $e');
+    }
+  }
+
+  Future<void> _cleanupRemoteRenderer(String participantId) async {
+    try {
+      if (remoteRenderers.containsKey(participantId)) {
+        await remoteRenderers[participantId]?.dispose();
+        setState(() {
+          remoteRenderers.remove(participantId);
+        });
+      }
+    } catch (e) {
+      print('Error cleaning up remote renderer for $participantId: $e');
+    }
+  }
+
   List<Widget> _buildParticipantThumbnails() {
     final otherParticipants = participants
         .where((p) => p.id != widget.currentParticipant.id)
@@ -400,13 +430,13 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
 
 
   @override
-  void dispose() async {
+  void dispose() {
     localRenderer.dispose();
     
     // Clean up all remote renderers
-    for (var renderer in remoteRenderers.values) {
-      await renderer.dispose();
-    }
+    remoteRenderers.values.forEach((renderer) {
+      renderer.dispose();
+    });
     remoteRenderers.clear();
 
     // Cleanup services
