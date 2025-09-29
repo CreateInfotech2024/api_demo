@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../service/api_service.dart';
+import 'package:api_demo/service/api_service.dart';
 
 class ParticipantsList extends StatelessWidget {
   final List participants;

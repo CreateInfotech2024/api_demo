@@ -1,4 +1,3 @@
-import 'package:api_demo/model/api_response.dart';
 import 'package:api_demo/service/api_service.dart';
 import 'package:flutter/material.dart';
 
