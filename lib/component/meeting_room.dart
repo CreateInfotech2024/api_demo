@@ -1,9 +1,9 @@
-import 'package:api_demo/componet/ParticipantsList.dart';
-import 'package:api_demo/componet/chat_panel.dart';
+import 'package:api_demo/component/ParticipantsList.dart';
+import 'package:api_demo/component/chat_panel.dart';
 import 'package:api_demo/model/chat_message.dart';
-import 'package:api_demo/servise/api_service.dart'hide LiveCourse;
+import 'package:api_demo/service/api_service.dart' hide LiveCourse;
 import 'package:flutter/material.dart';
-import 'package:api_demo/model/live_course.dart' ;
+import 'package:api_demo/model/live_course.dart';
 
 class MeetingRoom extends StatefulWidget {
   final LiveCourse meeting;

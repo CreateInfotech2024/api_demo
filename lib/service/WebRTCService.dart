@@ -1,5 +1,5 @@
 import 'dart:developer' as developer;
-import 'package:api_demo/servise/socketService.dart';
+import 'package:api_demo/service/socketService.dart';
 import 'package:api_demo/config/mobile_optimizations.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 

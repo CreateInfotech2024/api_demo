@@ -1,7 +1,7 @@
-import 'package:api_demo/componet/homescreen.dart';
-import 'package:api_demo/servise/WebRTCService.dart';
-import 'package:api_demo/servise/api_service.dart';
-import 'package:api_demo/servise/socketService.dart';
+import 'package:api_demo/component/homescreen.dart';
+import 'package:api_demo/service/WebRTCService.dart';
+import 'package:api_demo/service/api_service.dart';
+import 'package:api_demo/service/socketService.dart';
 import 'package:api_demo/config/app_config.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
