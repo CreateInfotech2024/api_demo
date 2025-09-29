@@ -31,6 +31,7 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
   bool isVideoEnabled = true;
   bool isScreenSharing = false;
   bool isInitializingMedia = false;
+  bool isGridViewEnabled = false; // Toggle between grid and speaker view
 
   RTCVideoRenderer localRenderer = RTCVideoRenderer();
   Map<String, RTCVideoRenderer> remoteRenderers = {};
@@ -419,6 +420,149 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
     }
   }
 
+  Widget _buildParticipantGrid() {
+    List<Widget> videoWidgets = [];
+    
+    // Add local video if available
+    if (localRenderer.srcObject != null) {
+      videoWidgets.add(_buildGridVideoTile(
+        renderer: localRenderer,
+        participantName: widget.currentParticipant.isHost! ? '👑 You (Host)' : 'You',
+        isLocal: true,
+      ));
+    }
+    
+    // Add remote videos
+    for (var entry in remoteRenderers.entries) {
+      if (entry.value.srcObject != null) {
+        final participant = participants.firstWhere(
+          (p) => p.id == entry.key,
+          orElse: () => Participant(id: entry.key, name: entry.key, isHost: false),
+        );
+        videoWidgets.add(_buildGridVideoTile(
+          renderer: entry.value,
+          participantName: participant.isHost ? '👑 ${participant.name} (Host)' : participant.name,
+          isLocal: false,
+        ));
+      }
+    }
+    
+    if (videoWidgets.isEmpty) {
+      return Center(
+        child: Text(
+          'No video streams available',
+          style: TextStyle(color: Colors.white70, fontSize: 16),
+        ),
+      );
+    }
+    
+    // Calculate grid dimensions
+    int crossAxisCount = videoWidgets.length <= 2 ? 1 : 2;
+    if (videoWidgets.length > 4) crossAxisCount = 3;
+    if (videoWidgets.length > 9) crossAxisCount = 4;
+    
+    return Padding(
+      padding: EdgeInsets.all(8),
+      child: GridView.count(
+        crossAxisCount: crossAxisCount,
+        childAspectRatio: 16/9,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        children: videoWidgets,
+      ),
+    );
+  }
+  
+  Widget _buildGridVideoTile({
+    required RTCVideoRenderer renderer,
+    required String participantName,
+    required bool isLocal,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey[800],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: participantName.contains('Host') ? Colors.orange : Colors.white24,
+          width: participantName.contains('Host') ? 2 : 1,
+        ),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(7),
+        child: Stack(
+          children: [
+            RTCVideoView(
+              renderer,
+              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+              mirror: isLocal && !isScreenSharing,
+            ),
+            
+            // Participant name
+            Positioned(
+              bottom: 8,
+              left: 8,
+              right: 8,
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black70,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  participantName,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            
+            // Status indicators for local user
+            if (isLocal)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: isVideoEnabled ? Colors.green : Colors.red,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        isVideoEnabled ? Icons.videocam : Icons.videocam_off,
+                        size: 12,
+                        color: Colors.white,
+                      ),
+                    ),
+                    SizedBox(width: 4),
+                    Container(
+                      padding: EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: isAudioEnabled ? Colors.green : Colors.red,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        isAudioEnabled ? Icons.mic : Icons.mic_off,
+                        size: 12,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   List<Widget> _buildParticipantThumbnails() {
     final otherParticipants = participants
         .where((p) => p.id != widget.currentParticipant.id)
@@ -650,8 +794,8 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
                     )
                         : Stack(
                       children: [
-                        // Main video area - Google Meet style video display
-                        if (remoteRenderers.isNotEmpty)
+                        // Main video area - Google Meet style video display (only show if not in grid mode)
+                        if (!isGridViewEnabled && remoteRenderers.isNotEmpty)
                           // Participants see remote participants (prioritizing host) in main area
                           Builder(
                             builder: (context) {
@@ -744,7 +888,7 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
                               );
                             },
                           )
-                        else if (widget.currentParticipant.isHost! && localRenderer.srcObject != null)
+                        else if (!isGridViewEnabled && widget.currentParticipant.isHost! && localRenderer.srcObject != null)
                           // Host shows their own video in main area when no participants joined
                           Stack(
                             children: [
@@ -773,7 +917,7 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
                               ),
                             ],
                           )
-                        else if (!widget.currentParticipant.isHost! && localRenderer.srcObject != null)
+                        else if (!isGridViewEnabled && !widget.currentParticipant.isHost! && localRenderer.srcObject != null)
                           // Non-host participants can see their own video if no remote streams
                           Stack(
                             children: [
@@ -802,7 +946,7 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
                               ),
                             ],
                           )
-                        else
+                        else if (!isGridViewEnabled)
                           // Waiting for participants with Google Meet-like styling
                           Center(
                             child: Column(
@@ -867,21 +1011,86 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
                             ),
                           ),
                         
-                        // Participant thumbnails overlay
-                        if (participants.length > 1)
+                        // Participant thumbnails overlay - only show if we have a main video and not in grid view
+                        if (!isGridViewEnabled && participants.length > 1 && (remoteRenderers.isNotEmpty || (widget.currentParticipant.isHost! && localRenderer.srcObject != null)))
                           Positioned(
                             top: 16,
                             right: 16,
                             child: Container(
                               width: 120,
-                              child: Column(
-                                children: _buildParticipantThumbnails(),
+                              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+                              child: SingleChildScrollView(
+                                child: Column(
+                                  children: _buildParticipantThumbnails(),
+                                ),
                               ),
                             ),
                           ),
                         
-                        // Local video thumbnail (bottom right, Google Meet style) - show for all participants when they have local stream
-                        if (localRenderer.srcObject != null && participants.length > 1)
+                        // Grid layout for many participants (4+ participants) or when grid view is enabled
+                        if ((participants.length >= 4 || isGridViewEnabled) && remoteRenderers.length >= 1)
+                          Positioned.fill(
+                            child: Container(
+                              color: Colors.black,
+                              child: _buildParticipantGrid(),
+                            ),
+                          ),
+                        
+                        // Participant count indicator
+                        if (participants.length > 1)
+                          Positioned(
+                            top: 16,
+                            left: isGridViewEnabled ? 80 : 16,
+                            child: Container(
+                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: Colors.white24),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.people, color: Colors.white, size: 16),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    '${participants.length}',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            top: 16,
+                            left: 16,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: IconButton(
+                                onPressed: () {
+                                  setState(() {
+                                    isGridViewEnabled = !isGridViewEnabled;
+                                  });
+                                },
+                                icon: Icon(
+                                  isGridViewEnabled ? Icons.person_pin : Icons.grid_view,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                                tooltip: isGridViewEnabled ? 'Switch to speaker view' : 'Switch to grid view',
+                              ),
+                            ),
+                          ),
+                        
+                        // Local video thumbnail (bottom right, Google Meet style) - show for all participants when they have local stream and not in grid view
+                        if (!isGridViewEnabled && localRenderer.srcObject != null && participants.length > 1)
                           Positioned(
                             bottom: 8,
                             right: 8,
