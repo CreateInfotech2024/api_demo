@@ -58,7 +58,7 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
       MediaStream? stream;
       if (widget.currentParticipant.isHost!) {
         stream = await webrtcService.initializeLocalMedia();
-        if (stream != null && !localRenderer.disposed) {
+        if (stream != null) {
           await localRenderer.setSrcObject(stream);
         }
       } else {
@@ -193,7 +193,7 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
       try {
         final webrtcService = context.read<WebRTCService>();
         final stream = await webrtcService.initializeLocalMedia();
-        if (stream != null && !localRenderer.disposed) {
+        if (stream != null) {
           await localRenderer.setSrcObject(stream);
         }
       } catch (e) {
@@ -215,7 +215,7 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
       try {
         final webrtcService = context.read<WebRTCService>();
         final stream = await webrtcService.initializeLocalMedia();
-        if (stream != null && !localRenderer.disposed) {
+        if (stream != null) {
           await localRenderer.setSrcObject(stream);
         }
       } catch (e) {
@@ -242,7 +242,7 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
         });
         // Switch back to camera - ensure local stream exists
         final stream = webrtcService.getLocalStream();
-        if (stream != null && !localRenderer.disposed) {
+        if (stream != null) {
           await localRenderer.setSrcObject(stream);
         }
       } else {
@@ -256,7 +256,7 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
           isScreenSharing = true;
         });
         // Show screen share in local video - add safety checks
-        if (screenStream != null && !localRenderer.disposed) {
+        if (screenStream != null) {
           await localRenderer.setSrcObject(screenStream);
         }
       }
@@ -308,7 +308,7 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
       for (var entry in remoteStreams.entries) {
         if (entry.value == stream && remoteRenderers.containsKey(entry.key)) {
           final renderer = remoteRenderers[entry.key];
-          if (renderer != null && !renderer.disposed) {
+          if (renderer != null) {
             await renderer.setSrcObject(stream);
             setState(() {
               // Force rebuild to show new remote streams
