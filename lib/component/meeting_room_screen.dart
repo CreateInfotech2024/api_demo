@@ -370,7 +370,6 @@ class _MeetingRoomScreenState extends State<MeetingRoomScreen> {
     }
 
     try {
-      final apiService = context.read<LiveCourseAPI>();
       final response = await LiveCourseAPI.completeCourse(widget.course.id);
 
       if (response.success) {

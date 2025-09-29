@@ -26,7 +26,6 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        Provider<LiveCourseAPI>(create: (_) => LiveCourseAPI()),
         Provider<SocketService>(create: (_) => SocketService()),
         Provider<WebRTCService>(create: (_) => WebRTCService()),
       ],
