@@ -1,13 +1,17 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../models/course.dart';
 import '../models/meeting.dart';
 import '../services/api_service.dart';
 import '../services/websocket_service.dart';
+import '../services/webrtc_service.dart';
+import '../utils/permission_helper.dart';
 
 class AppProvider extends ChangeNotifier {
   final ApiService _apiService = ApiService();
   final WebSocketService _wsService = WebSocketService();
+  final WebRTCService _webrtcService = WebRTCService();
 
   // Connection state
   bool _isConnected = false;
@@ -49,6 +53,8 @@ class AppProvider extends ChangeNotifier {
   bool get isVideoEnabled => _isVideoEnabled;
   bool get isAudioEnabled => _isAudioEnabled;
   bool get isScreenSharing => _isScreenSharing;
+  MediaStream? get localStream => _webrtcService.localStream;
+  Map<String, MediaStream> get remoteStreams => _webrtcService.remoteStreams;
 
   AppProvider() {
     _initializeServices();
@@ -126,6 +132,9 @@ class AppProvider extends ChangeNotifier {
         _currentParticipantId = response.data!.hostId;
         _chatMessages = List.from(response.data!.messages);
         
+        // Initialize WebRTC media
+        await _initializeWebRTC();
+        
         // Join the WebSocket room
         _wsService.joinMeeting(
           response.data!.code,
@@ -169,6 +178,9 @@ class AppProvider extends ChangeNotifier {
         _currentParticipantId = participant.id;
         _chatMessages = List.from(response.data!.messages);
         
+        // Initialize WebRTC media
+        await _initializeWebRTC();
+        
         // Join the WebSocket room
         _wsService.joinMeeting(
           meetingCode,
@@ -202,6 +214,9 @@ class AppProvider extends ChangeNotifier {
         meetingCode: _currentMeeting!.code,
         participantId: _currentParticipantId!,
       );
+      
+      // Cleanup WebRTC resources
+      await _webrtcService.dispose();
       
       // Clear current meeting data and reset media states
       _currentMeeting = null;
@@ -250,9 +265,34 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
+  // Initialize WebRTC for the current meeting
+  Future<void> _initializeWebRTC() async {
+    try {
+      // Request permissions
+      final hasPermissions = await PermissionHelper.requestCameraAndMicrophonePermissions();
+      if (!hasPermissions) {
+        _setError('Camera and microphone permissions are required');
+        return;
+      }
+
+      // Initialize local media stream
+      final stream = await _webrtcService.initializeLocalMedia();
+      if (stream == null) {
+        _setError('Failed to access camera/microphone');
+        return;
+      }
+      notifyListeners();
+    } catch (e) {
+      _setError('Failed to initialize WebRTC: $e');
+    }
+  }
+
   // Toggle video
   void toggleVideo() {
     _isVideoEnabled = !_isVideoEnabled;
+    
+    // Toggle video track
+    _webrtcService.toggleVideo(_isVideoEnabled);
     
     // Emit WebSocket event for video toggle
     if (_currentMeeting != null && _currentParticipantId != null) {
@@ -270,6 +310,9 @@ class AppProvider extends ChangeNotifier {
   // Toggle audio
   void toggleAudio() {
     _isAudioEnabled = !_isAudioEnabled;
+    
+    // Toggle audio track
+    _webrtcService.toggleAudio(_isAudioEnabled);
     
     // Emit WebSocket event for audio toggle
     if (_currentMeeting != null && _currentParticipantId != null) {
@@ -438,6 +481,7 @@ class AppProvider extends ChangeNotifier {
     _mediaEventsSub?.cancel();
     _wsService.dispose();
     _apiService.dispose();
+    _webrtcService.dispose();
     super.dispose();
   }
 }
