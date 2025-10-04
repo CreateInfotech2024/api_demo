@@ -1,13 +1,17 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../models/course.dart';
 import '../models/meeting.dart';
 import '../services/api_service.dart';
 import '../services/websocket_service.dart';
+import '../services/webrtc_service.dart';
+import '../utils/permission_helper.dart';
 
 class AppProvider extends ChangeNotifier {
   final ApiService _apiService = ApiService();
   final WebSocketService _wsService = WebSocketService();
+  final WebRTCService _webrtcService = WebRTCService();
 
   // Connection state
   bool _isConnected = false;
@@ -49,6 +53,8 @@ class AppProvider extends ChangeNotifier {
   bool get isVideoEnabled => _isVideoEnabled;
   bool get isAudioEnabled => _isAudioEnabled;
   bool get isScreenSharing => _isScreenSharing;
+  MediaStream? get localStream => _webrtcService.localStream;
+  Map<String, MediaStream> get remoteStreams => _webrtcService.remoteStreams;
 
   AppProvider() {
     _initializeServices();
@@ -126,6 +132,9 @@ class AppProvider extends ChangeNotifier {
         _currentParticipantId = response.data!.hostId;
         _chatMessages = List.from(response.data!.messages);
         
+        // Initialize WebRTC media
+        await _initializeWebRTC();
+        
         // Join the WebSocket room
         _wsService.joinMeeting(
           response.data!.code,
@@ -169,12 +178,22 @@ class AppProvider extends ChangeNotifier {
         _currentParticipantId = participant.id;
         _chatMessages = List.from(response.data!.messages);
         
+        // Initialize WebRTC media
+        await _initializeWebRTC();
+        
         // Join the WebSocket room
         _wsService.joinMeeting(
           meetingCode,
           participant.id,
           participantName,
         );
+        
+        // Create peer connections for existing participants (except self)
+        for (final existingParticipant in response.data!.participants) {
+          if (existingParticipant.id != participant.id) {
+            await _createPeerConnectionForParticipant(existingParticipant.id);
+          }
+        }
         
         _clearError();
         return true;
@@ -202,6 +221,9 @@ class AppProvider extends ChangeNotifier {
         meetingCode: _currentMeeting!.code,
         participantId: _currentParticipantId!,
       );
+      
+      // Cleanup WebRTC resources
+      await _webrtcService.dispose();
       
       // Clear current meeting data and reset media states
       _currentMeeting = null;
@@ -250,9 +272,34 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
+  // Initialize WebRTC for the current meeting
+  Future<void> _initializeWebRTC() async {
+    try {
+      // Request permissions
+      final hasPermissions = await PermissionHelper.requestCameraAndMicrophonePermissions();
+      if (!hasPermissions) {
+        _setError('Camera and microphone permissions are required');
+        return;
+      }
+
+      // Initialize local media stream
+      final stream = await _webrtcService.initializeLocalMedia();
+      if (stream == null) {
+        _setError('Failed to access camera/microphone');
+        return;
+      }
+      notifyListeners();
+    } catch (e) {
+      _setError('Failed to initialize WebRTC: $e');
+    }
+  }
+
   // Toggle video
   void toggleVideo() {
     _isVideoEnabled = !_isVideoEnabled;
+    
+    // Toggle video track
+    _webrtcService.toggleVideo(_isVideoEnabled);
     
     // Emit WebSocket event for video toggle
     if (_currentMeeting != null && _currentParticipantId != null) {
@@ -270,6 +317,9 @@ class AppProvider extends ChangeNotifier {
   // Toggle audio
   void toggleAudio() {
     _isAudioEnabled = !_isAudioEnabled;
+    
+    // Toggle audio track
+    _webrtcService.toggleAudio(_isAudioEnabled);
     
     // Emit WebSocket event for audio toggle
     if (_currentMeeting != null && _currentParticipantId != null) {
@@ -333,13 +383,27 @@ class AppProvider extends ChangeNotifier {
       case 'participant-joined':
         // Add system message about participant joining
         final participantName = data['participantName'] ?? 'Someone';
+        final participantId = data['participantId'];
         _chatMessages.add(ChatMessage.system('$participantName joined the meeting'));
+        
+        // Create peer connection for new participant
+        if (participantId != null && participantId != _currentParticipantId) {
+          _createPeerConnectionForParticipant(participantId);
+        }
+        
         notifyListeners();
         break;
       case 'participant-left':
         // Add system message about participant leaving
         final participantName = data['participantName'] ?? 'Someone';
+        final participantId = data['participantId'];
         _chatMessages.add(ChatMessage.system('$participantName left the meeting'));
+        
+        // Close peer connection for leaving participant
+        if (participantId != null) {
+          _webrtcService.closePeerConnection(participantId);
+        }
+        
         notifyListeners();
         break;
       case 'participant-audio-toggle':
@@ -411,6 +475,147 @@ class AppProvider extends ChangeNotifier {
         _chatMessages.add(ChatMessage.system('$participantName stopped screen sharing'));
         notifyListeners();
         break;
+      case 'offer':
+        _handleOffer(data);
+        break;
+      case 'answer':
+        _handleAnswer(data);
+        break;
+      case 'ice-candidate':
+        _handleIceCandidate(data);
+        break;
+    }
+  }
+
+  // Create peer connection for a participant
+  Future<void> _createPeerConnectionForParticipant(String participantId) async {
+    if (_currentMeeting == null || _currentParticipantId == null) return;
+
+    try {
+      await _webrtcService.createPeerConnection(
+        participantId,
+        (candidate) {
+          // Send ICE candidate via WebSocket
+          _wsService.sendIceCandidate(
+            _currentMeeting!.code,
+            _currentParticipantId!,
+            participantId,
+            {
+              'candidate': candidate.candidate,
+              'sdpMid': candidate.sdpMid,
+              'sdpMLineIndex': candidate.sdpMLineIndex,
+            },
+          );
+        },
+        (stream) {
+          // Remote stream received
+          notifyListeners();
+        },
+      );
+
+      // Create and send offer
+      final offer = await _webrtcService.createOffer(participantId);
+      if (offer != null) {
+        _wsService.sendOffer(
+          _currentMeeting!.code,
+          _currentParticipantId!,
+          participantId,
+          {
+            'sdp': offer.sdp,
+            'type': offer.type,
+          },
+        );
+      }
+    } catch (e) {
+      print('Error creating peer connection: $e');
+    }
+  }
+
+  // Handle incoming offer
+  Future<void> _handleOffer(Map<String, dynamic> data) async {
+    if (_currentMeeting == null || _currentParticipantId == null) return;
+
+    final fromId = data['from'];
+    final offerData = data['offer'];
+    
+    if (fromId == null || offerData == null) return;
+
+    try {
+      // Create peer connection if it doesn't exist
+      if (!_webrtcService.peerConnections.containsKey(fromId)) {
+        await _webrtcService.createPeerConnection(
+          fromId,
+          (candidate) {
+            _wsService.sendIceCandidate(
+              _currentMeeting!.code,
+              _currentParticipantId!,
+              fromId,
+              {
+                'candidate': candidate.candidate,
+                'sdpMid': candidate.sdpMid,
+                'sdpMLineIndex': candidate.sdpMLineIndex,
+              },
+            );
+          },
+          (stream) {
+            notifyListeners();
+          },
+        );
+      }
+
+      // Set remote description
+      final offer = RTCSessionDescription(offerData['sdp'], offerData['type']);
+      await _webrtcService.setRemoteDescription(fromId, offer);
+
+      // Create and send answer
+      final answer = await _webrtcService.createAnswer(fromId);
+      if (answer != null) {
+        _wsService.sendAnswer(
+          _currentMeeting!.code,
+          _currentParticipantId!,
+          fromId,
+          {
+            'sdp': answer.sdp,
+            'type': answer.type,
+          },
+        );
+      }
+    } catch (e) {
+      print('Error handling offer: $e');
+    }
+  }
+
+  // Handle incoming answer
+  Future<void> _handleAnswer(Map<String, dynamic> data) async {
+    final fromId = data['from'];
+    final answerData = data['answer'];
+    
+    if (fromId == null || answerData == null) return;
+
+    try {
+      final answer = RTCSessionDescription(answerData['sdp'], answerData['type']);
+      await _webrtcService.setRemoteDescription(fromId, answer);
+    } catch (e) {
+      print('Error handling answer: $e');
+    }
+  }
+
+  // Handle incoming ICE candidate
+  Future<void> _handleIceCandidate(Map<String, dynamic> data) async {
+    final fromId = data['from'];
+    final candidateData = data['candidate'];
+    
+    if (fromId == null || candidateData == null) return;
+
+    try {
+      final candidate = RTCIceCandidate(
+        candidateData['candidate'],
+        candidateData['sdpMid'],
+        candidateData['sdpMLineIndex'],
+      );
+      await _webrtcService.addIceCandidate(fromId, candidate);
+    } catch (e) {
+      print('Error handling ICE candidate: $e');
     }
   }
 
@@ -438,6 +643,7 @@ class AppProvider extends ChangeNotifier {
     _mediaEventsSub?.cancel();
     _wsService.dispose();
     _apiService.dispose();
+    _webrtcService.dispose();
     super.dispose();
   }
 }

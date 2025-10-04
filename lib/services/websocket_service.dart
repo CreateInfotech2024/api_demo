@@ -172,6 +172,28 @@ class WebSocketService {
         'data': data,
       });
     });
+
+    // WebRTC signaling events
+    _socket!.on('offer', (data) {
+      _mediaEventsController.add({
+        'event': 'offer',
+        'data': data,
+      });
+    });
+
+    _socket!.on('answer', (data) {
+      _mediaEventsController.add({
+        'event': 'answer',
+        'data': data,
+      });
+    });
+
+    _socket!.on('ice-candidate', (data) {
+      _mediaEventsController.add({
+        'event': 'ice-candidate',
+        'data': data,
+      });
+    });
   }
 
   // Join a course room
@@ -319,6 +341,40 @@ class WebSocketService {
       _socket!.emit('stop-screen-share', {
         'meetingCode': meetingCode,
         'participantId': participantId,
+      });
+    }
+  }
+
+  // WebRTC signaling methods
+  void sendOffer(String meetingCode, String fromId, String toId, Map<String, dynamic> offer) {
+    if (_socket != null && _isConnected) {
+      _socket!.emit('offer', {
+        'meetingCode': meetingCode,
+        'from': fromId,
+        'to': toId,
+        'offer': offer,
+      });
+    }
+  }
+
+  void sendAnswer(String meetingCode, String fromId, String toId, Map<String, dynamic> answer) {
+    if (_socket != null && _isConnected) {
+      _socket!.emit('answer', {
+        'meetingCode': meetingCode,
+        'from': fromId,
+        'to': toId,
+        'answer': answer,
+      });
+    }
+  }
+
+  void sendIceCandidate(String meetingCode, String fromId, String toId, Map<String, dynamic> candidate) {
+    if (_socket != null && _isConnected) {
+      _socket!.emit('ice-candidate', {
+        'meetingCode': meetingCode,
+        'from': fromId,
+        'to': toId,
+        'candidate': candidate,
       });
     }
   }

@@ -96,7 +96,12 @@ class _MeetingScreenState extends State<MeetingScreen> {
                         messages: provider.chatMessages,
                         onSendMessage: (message) => provider.sendChatMessage(message),
                       )
-                    : ParticipantGrid(participants: meeting.participants),
+                    : ParticipantGrid(
+                        participants: meeting.participants,
+                        localStream: provider.localStream,
+                        remoteStreams: provider.remoteStreams,
+                        currentParticipantId: provider.currentParticipantId,
+                      ),
               ),
               
               // Meeting controls
