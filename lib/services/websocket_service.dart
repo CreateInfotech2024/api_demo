@@ -143,6 +143,35 @@ class WebSocketService {
         'data': data,
       });
     });
+
+    // Media control events
+    _socket!.on('participant-audio-toggle', (data) {
+      _participantEventsController.add({
+        'event': 'participant-audio-toggle',
+        'data': data,
+      });
+    });
+
+    _socket!.on('participant-video-toggle', (data) {
+      _participantEventsController.add({
+        'event': 'participant-video-toggle',
+        'data': data,
+      });
+    });
+
+    _socket!.on('screen-share-started', (data) {
+      _mediaEventsController.add({
+        'event': 'screen-share-started',
+        'data': data,
+      });
+    });
+
+    _socket!.on('screen-share-stopped', (data) {
+      _mediaEventsController.add({
+        'event': 'screen-share-stopped',
+        'data': data,
+      });
+    });
   }
 
   // Join a course room
@@ -260,6 +289,36 @@ class WebSocketService {
         'peerId': peerId,
         'producerId': producerId,
         'rtpCapabilities': rtpCapabilities,
+      });
+    }
+  }
+
+  // Media control methods
+  void emitMediaToggle(String meetingCode, String participantId, String mediaType, bool enabled) {
+    if (_socket != null && _isConnected) {
+      final eventName = mediaType == 'video' ? 'toggle-video' : 'toggle-audio';
+      _socket!.emit(eventName, {
+        'meetingCode': meetingCode,
+        'participantId': participantId,
+        'enabled': enabled,
+      });
+    }
+  }
+
+  void startScreenShare(String meetingCode, String participantId) {
+    if (_socket != null && _isConnected) {
+      _socket!.emit('start-screen-share', {
+        'meetingCode': meetingCode,
+        'participantId': participantId,
+      });
+    }
+  }
+
+  void stopScreenShare(String meetingCode, String participantId) {
+    if (_socket != null && _isConnected) {
+      _socket!.emit('stop-screen-share', {
+        'meetingCode': meetingCode,
+        'participantId': participantId,
       });
     }
   }
