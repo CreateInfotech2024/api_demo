@@ -188,6 +188,13 @@ class AppProvider extends ChangeNotifier {
           participantName,
         );
         
+        // Create peer connections for existing participants (except self)
+        for (final existingParticipant in response.data!.participants) {
+          if (existingParticipant.id != participant.id) {
+            await _createPeerConnectionForParticipant(existingParticipant.id);
+          }
+        }
+        
         _clearError();
         return true;
       } else {
@@ -376,13 +383,27 @@ class AppProvider extends ChangeNotifier {
       case 'participant-joined':
         // Add system message about participant joining
         final participantName = data['participantName'] ?? 'Someone';
+        final participantId = data['participantId'];
         _chatMessages.add(ChatMessage.system('$participantName joined the meeting'));
+        
+        // Create peer connection for new participant
+        if (participantId != null && participantId != _currentParticipantId) {
+          _createPeerConnectionForParticipant(participantId);
+        }
+        
         notifyListeners();
         break;
       case 'participant-left':
         // Add system message about participant leaving
         final participantName = data['participantName'] ?? 'Someone';
+        final participantId = data['participantId'];
         _chatMessages.add(ChatMessage.system('$participantName left the meeting'));
+        
+        // Close peer connection for leaving participant
+        if (participantId != null) {
+          _webrtcService.closePeerConnection(participantId);
+        }
+        
         notifyListeners();
         break;
       case 'participant-audio-toggle':
@@ -454,6 +475,147 @@ class AppProvider extends ChangeNotifier {
         _chatMessages.add(ChatMessage.system('$participantName stopped screen sharing'));
         notifyListeners();
         break;
+      case 'offer':
+        _handleOffer(data);
+        break;
+      case 'answer':
+        _handleAnswer(data);
+        break;
+      case 'ice-candidate':
+        _handleIceCandidate(data);
+        break;
+    }
+  }
+
+  // Create peer connection for a participant
+  Future<void> _createPeerConnectionForParticipant(String participantId) async {
+    if (_currentMeeting == null || _currentParticipantId == null) return;
+
+    try {
+      await _webrtcService.createPeerConnection(
+        participantId,
+        (candidate) {
+          // Send ICE candidate via WebSocket
+          _wsService.sendIceCandidate(
+            _currentMeeting!.code,
+            _currentParticipantId!,
+            participantId,
+            {
+              'candidate': candidate.candidate,
+              'sdpMid': candidate.sdpMid,
+              'sdpMLineIndex': candidate.sdpMLineIndex,
+            },
+          );
+        },
+        (stream) {
+          // Remote stream received
+          notifyListeners();
+        },
+      );
+
+      // Create and send offer
+      final offer = await _webrtcService.createOffer(participantId);
+      if (offer != null) {
+        _wsService.sendOffer(
+          _currentMeeting!.code,
+          _currentParticipantId!,
+          participantId,
+          {
+            'sdp': offer.sdp,
+            'type': offer.type,
+          },
+        );
+      }
+    } catch (e) {
+      print('Error creating peer connection: $e');
+    }
+  }
+
+  // Handle incoming offer
+  Future<void> _handleOffer(Map<String, dynamic> data) async {
+    if (_currentMeeting == null || _currentParticipantId == null) return;
+
+    final fromId = data['from'];
+    final offerData = data['offer'];
+    
+    if (fromId == null || offerData == null) return;
+
+    try {
+      // Create peer connection if it doesn't exist
+      if (!_webrtcService.peerConnections.containsKey(fromId)) {
+        await _webrtcService.createPeerConnection(
+          fromId,
+          (candidate) {
+            _wsService.sendIceCandidate(
+              _currentMeeting!.code,
+              _currentParticipantId!,
+              fromId,
+              {
+                'candidate': candidate.candidate,
+                'sdpMid': candidate.sdpMid,
+                'sdpMLineIndex': candidate.sdpMLineIndex,
+              },
+            );
+          },
+          (stream) {
+            notifyListeners();
+          },
+        );
+      }
+
+      // Set remote description
+      final offer = RTCSessionDescription(offerData['sdp'], offerData['type']);
+      await _webrtcService.setRemoteDescription(fromId, offer);
+
+      // Create and send answer
+      final answer = await _webrtcService.createAnswer(fromId);
+      if (answer != null) {
+        _wsService.sendAnswer(
+          _currentMeeting!.code,
+          _currentParticipantId!,
+          fromId,
+          {
+            'sdp': answer.sdp,
+            'type': answer.type,
+          },
+        );
+      }
+    } catch (e) {
+      print('Error handling offer: $e');
+    }
+  }
+
+  // Handle incoming answer
+  Future<void> _handleAnswer(Map<String, dynamic> data) async {
+    final fromId = data['from'];
+    final answerData = data['answer'];
+    
+    if (fromId == null || answerData == null) return;
+
+    try {
+      final answer = RTCSessionDescription(answerData['sdp'], answerData['type']);
+      await _webrtcService.setRemoteDescription(fromId, answer);
+    } catch (e) {
+      print('Error handling answer: $e');
+    }
+  }
+
+  // Handle incoming ICE candidate
+  Future<void> _handleIceCandidate(Map<String, dynamic> data) async {
+    final fromId = data['from'];
+    final candidateData = data['candidate'];
+    
+    if (fromId == null || candidateData == null) return;
+
+    try {
+      final candidate = RTCIceCandidate(
+        candidateData['candidate'],
+        candidateData['sdpMid'],
+        candidateData['sdpMLineIndex'],
+      );
+      await _webrtcService.addIceCandidate(fromId, candidate);
+    } catch (e) {
+      print('Error handling ICE candidate: $e');
     }
   }
 
