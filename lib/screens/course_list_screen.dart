@@ -265,11 +265,7 @@ class _CourseListScreenState extends State<CourseListScreen> with SingleTickerPr
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: () {
-                          // Navigator.pop(context);
-                          MeetingScreen();
-                          // Navigate to live course
-                        },
+                        onPressed: () => _joinLiveCourse(course),
                         icon: const Icon(Icons.play_circle_fill),
                         label: const Text('Join Live Course'),
                         style: ElevatedButton.styleFrom(
@@ -352,5 +348,185 @@ class _CourseListScreenState extends State<CourseListScreen> with SingleTickerPr
       default:
         return Colors.grey;
     }
+  }
+
+  Future<void> _joinLiveCourse(Course course) async {
+    // Show dialog to choose between creating as host or joining as participant
+    final nameController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    String? selectedRole;
+
+    final result = await showDialog<Map<String, dynamic>?>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Join Live Course'),
+              content: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Course: ${course.title}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    if (course.instructorName != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Instructor: ${course.instructorName}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                    if (course.meetingCode != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Meeting Code: ${course.meetingCode}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Your Name',
+                        prefixIcon: Icon(Icons.person_outline),
+                        border: OutlineInputBorder(),
+                        hintText: 'Enter your name',
+                      ),
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Please enter your name';
+                        }
+                        return null;
+                      },
+                      autofocus: true,
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Select your role:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                    RadioListTile<String>(
+                      title: const Text('Join as Host/Instructor'),
+                      subtitle: const Text('Create and start the meeting'),
+                      value: 'host',
+                      groupValue: selectedRole,
+                      onChanged: (value) {
+                        setState(() {
+                          selectedRole = value;
+                        });
+                      },
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    RadioListTile<String>(
+                      title: const Text('Join as Participant'),
+                      subtitle: course.meetingCode != null
+                          ? const Text('Join the existing meeting')
+                          : const Text('Meeting code not available'),
+                      value: 'participant',
+                      groupValue: selectedRole,
+                      onChanged: course.meetingCode != null
+                          ? (value) {
+                              setState(() {
+                                selectedRole = value;
+                              });
+                            }
+                          : null,
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    nameController.dispose();
+                    Navigator.of(dialogContext).pop(null);
+                  },
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    if (formKey.currentState!.validate() && selectedRole != null) {
+                      Navigator.of(dialogContext).pop({
+                        'name': nameController.text.trim(),
+                        'role': selectedRole,
+                      });
+                    } else if (selectedRole == null) {
+                      ScaffoldMessenger.of(dialogContext).showSnackBar(
+                        const SnackBar(
+                          content: Text('Please select your role'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.video_call),
+                  label: const Text('Continue'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result != null && mounted) {
+      final provider = context.read<AppProvider>();
+      final name = result['name'] as String;
+      final role = result['role'] as String;
+      
+      // Close the course details sheet
+      if (mounted) {
+        Navigator.pop(context);
+      }
+      
+      bool success = false;
+      
+      if (role == 'host') {
+        // Create meeting as host
+        success = await provider.createMeeting(
+          hostName: name,
+          title: course.title,
+          description: course.description,
+        );
+      } else {
+        // Join existing meeting as participant
+        if (course.meetingCode != null) {
+          success = await provider.joinMeeting(
+            meetingCode: course.meetingCode!,
+            participantName: name,
+          );
+        }
+      }
+
+      if (success && mounted) {
+        // Navigate to meeting screen
+        Navigator.pushNamed(context, '/meeting');
+      }
+    }
+
+    nameController.dispose();
   }
 }
