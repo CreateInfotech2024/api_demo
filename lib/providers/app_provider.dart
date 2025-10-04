@@ -25,11 +25,17 @@ class AppProvider extends ChangeNotifier {
   // Chat messages
   List<ChatMessage> _chatMessages = [];
 
+  // Media control states
+  bool _isVideoEnabled = true;
+  bool _isAudioEnabled = true;
+  bool _isScreenSharing = false;
+
   // Stream subscriptions
   StreamSubscription? _connectionSub;
   StreamSubscription? _meetingEventsSub;
   StreamSubscription? _participantEventsSub;
   StreamSubscription? _chatEventsSub;
+  StreamSubscription? _mediaEventsSub;
 
   // Getters
   bool get isConnected => _isConnected;
@@ -40,6 +46,9 @@ class AppProvider extends ChangeNotifier {
   Meeting? get currentMeeting => _currentMeeting;
   String? get currentParticipantId => _currentParticipantId;
   List<ChatMessage> get chatMessages => _chatMessages;
+  bool get isVideoEnabled => _isVideoEnabled;
+  bool get isAudioEnabled => _isAudioEnabled;
+  bool get isScreenSharing => _isScreenSharing;
 
   AppProvider() {
     _initializeServices();
@@ -57,6 +66,7 @@ class AppProvider extends ChangeNotifier {
       _meetingEventsSub = _wsService.meetingEventsStream.listen(_handleMeetingEvent);
       _participantEventsSub = _wsService.participantEventsStream.listen(_handleParticipantEvent);
       _chatEventsSub = _wsService.chatEventsStream.listen(_handleChatEvent);
+      _mediaEventsSub = _wsService.mediaEventsStream.listen(_handleMediaEvent);
 
       // Perform health check
       await healthCheck();
@@ -193,10 +203,13 @@ class AppProvider extends ChangeNotifier {
         participantId: _currentParticipantId!,
       );
       
-      // Clear current meeting data
+      // Clear current meeting data and reset media states
       _currentMeeting = null;
       _currentParticipantId = null;
       _chatMessages = [];
+      _isVideoEnabled = true;
+      _isAudioEnabled = true;
+      _isScreenSharing = false;
       
       notifyListeners();
     } catch (e) {
@@ -235,6 +248,56 @@ class AppProvider extends ChangeNotifier {
     } catch (e) {
       _setError('Failed to send message: $e');
     }
+  }
+
+  // Toggle video
+  void toggleVideo() {
+    _isVideoEnabled = !_isVideoEnabled;
+    
+    // Emit WebSocket event for video toggle
+    if (_currentMeeting != null && _currentParticipantId != null) {
+      _wsService.emitMediaToggle(
+        _currentMeeting!.code,
+        _currentParticipantId!,
+        'video',
+        _isVideoEnabled,
+      );
+    }
+    
+    notifyListeners();
+  }
+
+  // Toggle audio
+  void toggleAudio() {
+    _isAudioEnabled = !_isAudioEnabled;
+    
+    // Emit WebSocket event for audio toggle
+    if (_currentMeeting != null && _currentParticipantId != null) {
+      _wsService.emitMediaToggle(
+        _currentMeeting!.code,
+        _currentParticipantId!,
+        'audio',
+        _isAudioEnabled,
+      );
+    }
+    
+    notifyListeners();
+  }
+
+  // Toggle screen sharing
+  void toggleScreenSharing() {
+    _isScreenSharing = !_isScreenSharing;
+    
+    // Emit WebSocket event for screen sharing
+    if (_currentMeeting != null && _currentParticipantId != null) {
+      if (_isScreenSharing) {
+        _wsService.startScreenShare(_currentMeeting!.code, _currentParticipantId!);
+      } else {
+        _wsService.stopScreenShare(_currentMeeting!.code, _currentParticipantId!);
+      }
+    }
+    
+    notifyListeners();
   }
 
   void _handleConnectionChange(bool connected) {
@@ -279,6 +342,39 @@ class AppProvider extends ChangeNotifier {
         _chatMessages.add(ChatMessage.system('$participantName left the meeting'));
         notifyListeners();
         break;
+      case 'participant-audio-toggle':
+        // Update participant audio state
+        final participantId = data['participantId'];
+        final enabled = data['enabled'] ?? false;
+        _updateParticipantMediaState(participantId, audio: enabled);
+        break;
+      case 'participant-video-toggle':
+        // Update participant video state
+        final participantId = data['participantId'];
+        final enabled = data['enabled'] ?? false;
+        _updateParticipantMediaState(participantId, video: enabled);
+        break;
+    }
+  }
+
+  void _updateParticipantMediaState(String participantId, {bool? audio, bool? video}) {
+    if (_currentMeeting == null) return;
+
+    final participantIndex = _currentMeeting!.participants.indexWhere((p) => p.id == participantId);
+    if (participantIndex != -1) {
+      final participant = _currentMeeting!.participants[participantIndex];
+      final updatedParticipants = List<Participant>.from(_currentMeeting!.participants);
+      updatedParticipants[participantIndex] = Participant(
+        id: participant.id,
+        name: participant.name,
+        isHost: participant.isHost,
+        hasVideo: video ?? participant.hasVideo,
+        hasAudio: audio ?? participant.hasAudio,
+        joinedAt: participant.joinedAt,
+      );
+      
+      _currentMeeting = _currentMeeting!.copyWith(participants: updatedParticipants);
+      notifyListeners();
     }
   }
 
@@ -297,6 +393,24 @@ class AppProvider extends ChangeNotifier {
 
       _chatMessages.add(message);
       notifyListeners();
+    }
+  }
+
+  void _handleMediaEvent(Map<String, dynamic> event) {
+    final eventType = event['event'];
+    final data = event['data'];
+
+    switch (eventType) {
+      case 'screen-share-started':
+        final participantName = data['participantName'] ?? 'Someone';
+        _chatMessages.add(ChatMessage.system('$participantName started screen sharing'));
+        notifyListeners();
+        break;
+      case 'screen-share-stopped':
+        final participantName = data['participantName'] ?? 'Someone';
+        _chatMessages.add(ChatMessage.system('$participantName stopped screen sharing'));
+        notifyListeners();
+        break;
     }
   }
 
@@ -321,6 +435,7 @@ class AppProvider extends ChangeNotifier {
     _meetingEventsSub?.cancel();
     _participantEventsSub?.cancel();
     _chatEventsSub?.cancel();
+    _mediaEventsSub?.cancel();
     _wsService.dispose();
     _apiService.dispose();
     super.dispose();

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../models/meeting.dart';
+import '../../providers/app_provider.dart';
 
 class MeetingControls extends StatefulWidget {
   final Meeting meeting;
@@ -18,98 +20,84 @@ class MeetingControls extends StatefulWidget {
 }
 
 class _MeetingControlsState extends State<MeetingControls> {
-  bool _isVideoOn = true;
-  bool _isAudioOn = true;
-  bool _isScreenSharing = false;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          top: BorderSide(color: Colors.grey.shade300),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, -2),
+    return Consumer<AppProvider>(
+      builder: (context, provider, child) {
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border(
+              top: BorderSide(color: Colors.grey.shade300),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 4,
+                offset: const Offset(0, -2),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: SafeArea(
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            // Video toggle
-            _buildControlButton(
-              icon: _isVideoOn ? Icons.videocam : Icons.videocam_off,
-              label: 'Video',
-              isActive: _isVideoOn,
-              activeColor: Colors.blue,
-              inactiveColor: Colors.red,
-              onPressed: () {
-                setState(() {
-                  _isVideoOn = !_isVideoOn;
-                });
-                // TODO: Implement video toggle
-              },
+          child: SafeArea(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                // Video toggle
+                _buildControlButton(
+                  icon: provider.isVideoEnabled ? Icons.videocam : Icons.videocam_off,
+                  label: 'Video',
+                  isActive: provider.isVideoEnabled,
+                  activeColor: Colors.blue,
+                  inactiveColor: Colors.red,
+                  onPressed: () => provider.toggleVideo(),
+                ),
+                
+                // Audio toggle
+                _buildControlButton(
+                  icon: provider.isAudioEnabled ? Icons.mic : Icons.mic_off,
+                  label: 'Audio',
+                  isActive: provider.isAudioEnabled,
+                  activeColor: Colors.green,
+                  inactiveColor: Colors.red,
+                  onPressed: () => provider.toggleAudio(),
+                ),
+                
+                // Screen share toggle
+                _buildControlButton(
+                  icon: provider.isScreenSharing ? Icons.stop_screen_share : Icons.screen_share,
+                  label: 'Share',
+                  isActive: provider.isScreenSharing,
+                  activeColor: Colors.orange,
+                  inactiveColor: Colors.grey,
+                  onPressed: () => provider.toggleScreenSharing(),
+                ),
+                
+                // Chat toggle
+                _buildControlButton(
+                  icon: Icons.chat,
+                  label: 'Chat',
+                  isActive: true,
+                  activeColor: Colors.purple,
+                  inactiveColor: Colors.grey,
+                  onPressed: widget.onToggleChat,
+                ),
+                
+                // Leave meeting
+                _buildControlButton(
+                  icon: Icons.call_end,
+                  label: 'Leave',
+                  isActive: false,
+                  activeColor: Colors.red,
+                  inactiveColor: Colors.red,
+                  onPressed: widget.onLeaveMeeting,
+                ),
+              ],
             ),
-            
-            // Audio toggle
-            _buildControlButton(
-              icon: _isAudioOn ? Icons.mic : Icons.mic_off,
-              label: 'Audio',
-              isActive: _isAudioOn,
-              activeColor: Colors.green,
-              inactiveColor: Colors.red,
-              onPressed: () {
-                setState(() {
-                  _isAudioOn = !_isAudioOn;
-                });
-                // TODO: Implement audio toggle
-              },
-            ),
-            
-            // Screen share toggle
-            _buildControlButton(
-              icon: _isScreenSharing ? Icons.stop_screen_share : Icons.screen_share,
-              label: 'Share',
-              isActive: _isScreenSharing,
-              activeColor: Colors.orange,
-              inactiveColor: Colors.grey,
-              onPressed: () {
-                setState(() {
-                  _isScreenSharing = !_isScreenSharing;
-                });
-                // TODO: Implement screen sharing
-              },
-            ),
-            
-            // Chat toggle
-            _buildControlButton(
-              icon: Icons.chat,
-              label: 'Chat',
-              isActive: true,
-              activeColor: Colors.purple,
-              inactiveColor: Colors.grey,
-              onPressed: widget.onToggleChat,
-            ),
-            
-            // Leave meeting
-            _buildControlButton(
-              icon: Icons.call_end,
-              label: 'Leave',
-              isActive: false,
-              activeColor: Colors.red,
-              inactiveColor: Colors.red,
-              onPressed: widget.onLeaveMeeting,
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
