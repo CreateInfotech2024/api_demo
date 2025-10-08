@@ -99,7 +99,10 @@ lib/
 │   └── meeting_screen.dart          # Active meeting
 ├── services/                         # Backend services
 │   ├── api_service.dart             # REST API client
-│   └── websocket_service.dart       # Socket.IO client
+│   ├── websocket_service.dart       # Socket.IO client
+│   └── webrtc_service.dart          # WebRTC P2P streaming
+├── utils/                            # Utilities
+│   └── permission_helper.dart       # Permission handling
 └── widgets/                          # Reusable components
     ├── common/                       # Shared widgets
     ├── course/                       # Course widgets

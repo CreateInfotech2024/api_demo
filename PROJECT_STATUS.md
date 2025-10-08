@@ -124,7 +124,10 @@ api_demo/
 │   │   └── meeting_screen.dart      # Active meeting ✅
 │   ├── services/                     # Backend services ✅
 │   │   ├── api_service.dart         # REST API ✅
-│   │   └── websocket_service.dart   # Socket.IO ✅
+│   │   ├── websocket_service.dart   # Socket.IO ✅
+│   │   └── webrtc_service.dart      # WebRTC P2P ✅
+│   ├── utils/                        # Utilities ✅
+│   │   └── permission_helper.dart   # Permissions ✅
 │   └── widgets/                      # Reusable widgets ✅
 │       ├── common/                   # Shared widgets ✅
 │       ├── course/                   # Course widgets ✅
@@ -271,21 +274,24 @@ api_demo/
 ## 📈 Metrics
 
 ### Code Statistics
-- **Total Files**: 19 Dart files
-- **Lines of Code**: ~5,000+
-- **Documentation**: 10 MD files, 70,000+ characters
+- **Total Files**: 21 Dart files (19 source + 2 generated)
+- **Lines of Code**: 4,427
+- **Documentation**: 23 MD files, 150,000+ characters
 - **Models**: 3 (Course, Meeting, ApiResponse)
-- **Services**: 2 (API, WebSocket)
+- **Services**: 3 (API, WebSocket, WebRTC)
+- **Utilities**: 1 (PermissionHelper)
 - **Screens**: 3 (Home, CourseList, Meeting)
 - **Widgets**: 8+ reusable components
 
 ### Features Implemented
-- **Meeting Features**: 10+
+- **Meeting Features**: 12+ (including WebRTC)
 - **Course Features**: 8+
 - **Chat Features**: 7+
-- **Media Controls**: 3
+- **Media Controls**: 3 (video, audio, screen share)
+- **WebRTC Features**: 10+ (P2P video/audio, signaling)
+- **Permission Features**: 4 (camera, mic, check, settings)
 - **UI Components**: 15+
-- **WebSocket Events**: 12+
+- **WebSocket Events**: 15+ (including WebRTC signaling)
 - **API Endpoints**: 8+
 
 ### Test Coverage
