@@ -1,7 +1,15 @@
 # Google Meet-like Video Calling Implementation Summary
 
+> **⚠️ NOTE**: This document describes an earlier implementation phase. For the most current and accurate information about the WebRTC implementation, please refer to:
+> - **IMPLEMENTATION_SUMMARY_FINAL.md** - Complete current implementation
+> - **WEBRTC_README.md** - WebRTC implementation guide
+> - **CHANGES_SUMMARY.md** - Latest changes and current state
+> - **FEATURES.md** - Complete feature list with WebRTC details
+
 ## Overview
-This document summarizes the comprehensive improvements made to the Flutter video calling application to provide a Google Meet/Zoom-like experience with proper SFU (Selective Forwarding Unit) backend support, mobile compatibility, and enhanced screen sharing functionality.
+This document summarizes earlier comprehensive improvements made to the Flutter video calling application to provide a Google Meet/Zoom-like experience with proper SFU (Selective Forwarding Unit) backend support, mobile compatibility, and enhanced screen sharing functionality.
+
+**Note**: File paths mentioned in this document (e.g., `lib/servise/`) may differ from the current structure (which uses `lib/services/`). Please refer to the current codebase for accurate paths.
 
 ## Problem Statement Addressed
 > "please check the working like googlemeet or zoom and the backend developem side use SFU and the API Call the backend compltely worked and start please check the work properly like google meet the backend developer use and the perfect run on backend side please check the flutter frontend side working lie google meet and check API Endpoints also sharescreen feature working mobileside or webside"
